@@ -34,6 +34,18 @@ table tr td {
   -webkit-mask: url(/static/icons/mdi--plus.svg) center / contain no-repeat;
   mask: url(/static/icons/mdi--plus.svg) center / contain no-repeat;
 }
+.icon-delete {
+  -webkit-mask: url(/static/icons/mdi--delete-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--delete-outline.svg) center / contain no-repeat;
+}
+.icon-chats {
+  -webkit-mask: url(/static/icons/mdi--forum-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--forum-outline.svg) center / contain no-repeat;
+}
+.icon-settings {
+  -webkit-mask: url(/static/icons/mdi--cog-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--cog-outline.svg) center / contain no-repeat;
+}
 .icon-loading {
   -webkit-mask: url(/static/icons/line-md--loading-twotone-loop.svg) center / contain no-repeat;
   mask: url(/static/icons/line-md--loading-twotone-loop.svg) center / contain no-repeat;

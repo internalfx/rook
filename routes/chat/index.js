@@ -1,16 +1,7 @@
 
-import lemonade from '../../services/lemonade.js'
+import { renderChatPage } from '../../lib/chatPage.js'
 
+// A new conversation; it's saved when the first message is sent
 export const GET = async function (ctx) {
-  let models = []
-  let modelsError = null
-
-  try {
-    models = await lemonade.listChatModels()
-  } catch (err) {
-    console.error(err)
-    modelsError = err.message
-  }
-
-  ctx.body = ctx.nunjucks(`chat/index`, { models, modelsError })
+  await renderChatPage(ctx, null)
 }

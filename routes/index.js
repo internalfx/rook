@@ -1,16 +1,6 @@
 
 import lemonade from '../services/lemonade.js'
-
-// 262144 => "256K"
-const formatContextLength = function (tokens) {
-  if (tokens == null) {
-    return null
-  }
-
-  const thousands = Math.round(tokens / 1024)
-
-  return `${thousands}K`
-}
+import { formatContextLength } from '../lib/format.js'
 
 export const GET = async function (ctx) {
   let models = []

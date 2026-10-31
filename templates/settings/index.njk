@@ -1,0 +1,83 @@
+{% extends 'layouts/default' %}
+
+{% block title %}Settings · {{ config.appName }}{% endblock %}
+
+{% block body %}
+  {# One choice per model: its name, labels, size and context length #}
+  {% macro modelOption(name, model, current) %}
+    <label class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+      <input type="radio" name="{{ name }}" value="{{ model.id }}" class="mt-0.5 text-sky-600 focus:ring-sky-500"
+        {% if model.id == current %}checked{% endif %} required>
+      <span class="flex-1 min-w-0">
+        <span class="block text-sm font-medium break-words">{{ model.id }}</span>
+        <span class="mt-1 flex flex-wrap items-center gap-1 text-xs text-gray-500">
+          {% for label in model.labels %}
+            <span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{{ label }}</span>
+          {% endfor %}
+          {% if model.sizeGB != null %}<span class="ml-1">{{ model.sizeGB }} GB</span>{% endif %}
+          {% if model.contextLength %}<span class="ml-1">· {{ model.contextLength }} context</span>{% endif %}
+        </span>
+      </span>
+    </label>
+  {% endmacro %}
+
+  <h1 class="mb-6 text-2xl font-bold">Settings</h1>
+
+  {% if modelsError %}
+    <div class="max-w-3xl p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
+      Couldn't load models: {{ modelsError }}
+    </div>
+  {% else %}
+    <form method="post" action="/settings" class="max-w-3xl space-y-6">
+      <fieldset class="bg-white rounded-lg shadow-sm">
+        <div class="px-4 py-3 border-b border-gray-200">
+          <legend class="font-bold">Chat model</legend>
+          <p class="mt-0.5 text-xs text-gray-500">Used for every chat, and for writing chat titles.</p>
+        </div>
+
+        {% if chatModels.length == 0 %}
+          <p class="p-4 text-sm text-gray-500">The Lemonade server has no chat models.</p>
+        {% else %}
+          {% if chatModel and not isChatModelListed %}
+            <div class="m-4 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
+              The current model, "{{ chatModel }}", isn't on the Lemonade server any more. Choose another one.
+            </div>
+          {% endif %}
+
+          <div class="divide-y divide-gray-100">
+            {% for model in chatModels %}
+              {{ modelOption('chatModel', model, chatModel) }}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </fieldset>
+
+      <fieldset class="bg-white rounded-lg shadow-sm">
+        <div class="px-4 py-3 border-b border-gray-200">
+          <legend class="font-bold">Image model</legend>
+          <p class="mt-0.5 text-xs text-gray-500">Lets the chat model create images when you ask for them. Choose Off to turn image generation off.</p>
+        </div>
+
+        {% if imageModel and not isImageModelListed %}
+          <div class="m-4 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
+            The current model, "{{ imageModel }}", isn't on the Lemonade server any more. Choose another one, or Off.
+          </div>
+        {% endif %}
+
+        <div class="divide-y divide-gray-100">
+          <label class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+            <input type="radio" name="imageModel" value="{{ noImageModel }}" class="mt-0.5 text-sky-600 focus:ring-sky-500"
+              {% if not imageModel %}checked{% endif %} required>
+            <span class="text-sm font-medium">Off</span>
+          </label>
+
+          {% for model in imageModels %}
+            {{ modelOption('imageModel', model, imageModel) }}
+          {% endfor %}
+        </div>
+      </fieldset>
+
+      <button type="submit" class="px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Save</button>
+    </form>
+  {% endif %}
+{% endblock body %}

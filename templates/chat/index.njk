@@ -1,50 +1,79 @@
 {% extends 'layouts/default' %}
 
-{% block title %}Chat · {{ config.appName }}{% endblock %}
+{% block title %}{{ chat.title if chat and chat.title else 'Chat' }} · {{ config.appName }}{% endblock %}
 
-{% block mainClass %}flex flex-col overflow-hidden{% endblock %}
+{% block mainClass %}relative flex overflow-hidden{% endblock %}
 
 {% block head %}
 <script>
   document.addEventListener(`alpine:init`, () => {
+    const appName = {{ config.appName | dump | safe }}
+    // False when no usable chat model is chosen in Settings
+    const canSend = {{ 'true' if modelProblem == null else 'false' }}
+
     Alpine.data(`chat`, () => ({
-      model: ``,
+      chatId: null,
+      chats: [],
       messages: [],
       input: ``,
       sending: false,
       error: null,
       abort: null,
+      // Small screens only: the list of chats opens over the conversation
+      listOpen: false,
+      // The chat whose delete button is waiting for confirmation
+      confirmDeleteId: null,
 
       init () {
-        // Use the model picked last time, if the server still has it
-        const optionValues = Array.from(this.$refs.model.options).map((option) => option.value)
+        const dataText = document.getElementById(`chat-data`).textContent
+        const data = JSON.parse(dataText)
 
-        let savedModel = null
+        this.chatId = data.chat?.id ?? null
+        this.chats = data.chats
+        this.messages = data.messages
 
-        try {
-          savedModel = localStorage.getItem(`rook.chatModel`)
-        } catch (err) {}
-
-        if (optionValues.includes(savedModel)) {
-          this.model = savedModel
-        } else if (optionValues.length > 0) {
-          this.model = optionValues[0]
-        }
-
-        this.$watch(`model`, (value) => {
-          try {
-            localStorage.setItem(`rook.chatModel`, value)
-          } catch (err) {}
-        })
-
+        this.scrollToBottom()
         this.$refs.input.focus()
       },
 
-      newChat () {
-        this.stop()
-        this.messages = []
-        this.error = null
-        this.$refs.input.focus()
+      get chatTitle () {
+        const current = this.chats.find((item) => item.id === this.chatId)
+
+        if (current == null || current.title == null) {
+          return `New chat`
+        }
+
+        return current.title
+      },
+
+      currentPath () {
+        return window.location.pathname
+      },
+
+      setChatTitle (id, title) {
+        const item = this.chats.find((entry) => entry.id === id)
+
+        if (item != null) {
+          item.title = title
+        }
+
+        if (id === this.chatId) {
+          document.title = `${title} · ${appName}`
+        }
+      },
+
+      // Moves a chat to the top of the list, adding it if it's new
+      bumpChat (id) {
+        const index = this.chats.findIndex((item) => item.id === id)
+
+        let item = { id, title: null }
+
+        if (index !== -1) {
+          item = this.chats[index]
+          this.chats.splice(index, 1)
+        }
+
+        this.chats.unshift(item)
       },
 
       stop () {
@@ -76,10 +105,34 @@
         })
       },
 
+      lastMessage () {
+        // Read through this.messages to get Alpine's reactive copy, so streamed text shows up as it arrives
+        return this.messages[this.messages.length - 1]
+      },
+
+      // True while waiting for the model with nothing new on screen yet (a tool shows its own progress)
+      isWaiting () {
+        if (this.sending === false) {
+          return false
+        }
+
+        const last = this.lastMessage()
+
+        if (last == null || last.role === `user`) {
+          return true
+        }
+
+        if (last.role === `assistant`) {
+          return last.content === ``
+        }
+
+        return false
+      },
+
       async send () {
         const text = this.input.trim()
 
-        if (text === `` || this.sending === true || this.model === ``) {
+        if (text === `` || this.sending === true || canSend === false) {
           return
         }
 
@@ -87,46 +140,65 @@
         this.input = ``
         this.messages.push({ role: `user`, content: text, reasoning: `` })
 
-        // Earlier replies that failed or were stopped before any text aren't sent back
-        const history = this.messages
-          .filter((message) => message.content !== ``)
-          .map((message) => ({ role: message.role, content: message.content }))
-
-        this.messages.push({ role: `assistant`, content: ``, reasoning: `` })
-        // Read it back from the array to get Alpine's reactive copy, so streamed text shows up as it arrives
-        const reply = this.messages[this.messages.length - 1]
-
+        const controller = new AbortController()
+        this.abort = controller
         this.sending = true
-        this.abort = new AbortController()
         this.scrollToBottom()
 
         try {
           const response = await fetch(`/chat/send`, {
             method: `POST`,
             headers: { 'Content-Type': `application/json` },
-            body: JSON.stringify({ model: this.model, messages: history }),
-            signal: this.abort.signal,
+            body: JSON.stringify({ chatId: this.chatId, content: text }),
+            signal: controller.signal,
           })
 
           if (response.ok === false) {
             const errorText = await response.text()
+
+            // Nothing was saved, so take the message back out and put it in the box to retry
+            this.messages.splice(-1, 1)
+            this.input = text
+
             throw new Error(errorText || `Request failed (${response.status})`)
           }
 
-          await this.readStream(response, reply)
+          const chatId = response.headers.get(`X-Chat-Id`)
+
+          // The first message of a new chat creates it; give it its own URL
+          if (this.chatId == null) {
+            this.chatId = chatId
+            history.replaceState(null, ``, `/chat/${chatId}`)
+          }
+
+          this.bumpChat(chatId)
+
+          await this.readStream(response, chatId)
         } catch (err) {
           if (err.name !== `AbortError`) {
             this.error = err.message
           }
         } finally {
-          this.sending = false
-          this.abort = null
-          this.$nextTick(() => this.$refs.input.focus())
+          // A tool still running when the reply ended was stopped
+          for (const message of this.messages) {
+            if (message.pending === true) {
+              message.pending = false
+              message.content = `Stopped before it finished.`
+            }
+          }
+
+          // A newer send may have started; only clear our own state
+          if (this.abort === controller) {
+            this.abort = null
+            this.sending = false
+            this.$nextTick(() => this.$refs.input.focus())
+          }
         }
       },
 
-      // The reply is a server-sent event stream: "data: {...}" lines, ending with "data: [DONE]"
-      async readStream (response, reply) {
+      // The reply is a stream of rook's own events, one JSON object per "data:" line
+      // (see runConversation in routes/chat/send.js)
+      async readStream (response, chatId) {
         const reader = response.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ``
@@ -147,7 +219,7 @@
           const shouldScroll = this.isNearBottom()
 
           for (const line of lines) {
-            this.readEvent(line, reply)
+            this.readEvent(line, chatId)
           }
 
           if (shouldScroll) {
@@ -156,33 +228,43 @@
         }
       },
 
-      readEvent (line, reply) {
+      readEvent (line, chatId) {
         const trimmed = line.trim()
 
         if (trimmed.startsWith(`data:`) === false) {
           return
         }
 
-        const data = trimmed.slice(5).trim()
+        const event = JSON.parse(trimmed.slice(5))
+        const last = this.lastMessage()
 
-        if (data === `[DONE]`) {
-          return
-        }
+        if (event.type === `assistant`) {
+          this.messages.push({ role: `assistant`, content: ``, reasoning: `` })
+        } else if (event.type === `reasoning` && last?.role === `assistant`) {
+          last.reasoning += event.text
+        } else if (event.type === `content` && last?.role === `assistant`) {
+          last.content += event.text
+        } else if (event.type === `toolCall`) {
+          this.messages.push({
+            role: `tool`,
+            toolCallId: event.toolCallId,
+            prompt: event.prompt,
+            imageId: null,
+            content: ``,
+            pending: true,
+          })
+        } else if (event.type === `toolResult`) {
+          const toolMessage = this.messages.find((message) => message.toolCallId === event.toolCallId)
 
-        const event = JSON.parse(data)
-        const delta = event.choices?.[0]?.delta
-
-        if (delta == null) {
-          return
-        }
-
-        // Thinking models send their reasoning separately from the answer
-        if (delta.reasoning_content) {
-          reply.reasoning += delta.reasoning_content
-        }
-
-        if (delta.content) {
-          reply.content += delta.content
+          if (toolMessage != null) {
+            toolMessage.pending = false
+            toolMessage.imageId = event.imageId
+            toolMessage.content = event.content
+          }
+        } else if (event.type === `title`) {
+          this.setChatTitle(chatId, event.title)
+        } else if (event.type === `error`) {
+          this.error = event.message
         }
       },
     }))
@@ -191,77 +273,157 @@
 {% endblock %}
 
 {% block body %}
-<div x-data="chat" class="flex flex-col h-full">
-  <div class="shrink-0 flex flex-wrap items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
-    <h1 class="text-lg font-bold">Chat</h1>
+<script type="application/json" id="chat-data">{{ pageJSON | safe }}</script>
 
-    <label class="sr-only" for="chat-model">Model</label>
-    <select id="chat-model" x-ref="model" x-model="model" :disabled="sending"
-      class="min-w-0 max-w-full py-1.5 pl-3 pr-8 text-sm border border-gray-300 rounded-md focus:ring-0 focus:border-gray-600">
-      {% for model in models %}
-        <option value="{{ model.id }}">{{ model.id }}</option>
-      {% endfor %}
-    </select>
+<div x-data="chat" class="flex flex-1 min-w-0">
+  {# Backdrop behind the chat list on small screens #}
+  <div x-cloak x-show="listOpen" class="absolute inset-0 z-10 bg-black/30 md:hidden" @click="listOpen = false"></div>
 
-    <button type="button" class="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50" @click="newChat()">
-      <span class="icon-plus inline-block size-4 bg-current" aria-hidden="true"></span>
-      New chat
-    </button>
-  </div>
+  <aside class="absolute inset-y-0 left-0 z-20 w-64 hidden md:static md:flex flex-col shrink-0 bg-white border-r border-gray-200"
+    :class="{ 'hidden': !listOpen, 'flex': listOpen }" aria-label="Chats">
+    <div class="shrink-0 p-3 border-b border-gray-200">
+      <a href="/chat" class="flex items-center justify-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50">
+        <span class="icon-plus inline-block size-4 bg-current" aria-hidden="true"></span>
+        New chat
+      </a>
+    </div>
 
-  <div x-ref="messages" class="flex-1 min-h-0 overflow-y-auto px-4 py-6">
-    <div class="mx-auto max-w-3xl space-y-4">
-      {% if modelsError %}
-        <div class="p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
-          Couldn't load models: {{ modelsError }}
-        </div>
-      {% elif models.length == 0 %}
-        <p class="text-sm text-center text-gray-500">The Lemonade server has no chat models.</p>
-      {% endif %}
+    <nav class="flex-1 overflow-y-auto p-2 space-y-0.5">
+      <p x-show="chats.length === 0" class="px-3 py-2 text-xs text-gray-500">No saved chats yet.</p>
 
-      <p x-show="messages.length === 0" class="pt-16 text-sm text-center text-gray-500">Send a message to start a conversation.</p>
+      <template x-for="item in chats" :key="item.id">
+        <div class="group relative">
+          <a :href="`/chat/${item.id}`"
+            class="block py-2 pl-3 pr-9 text-sm rounded-md truncate"
+            :class="item.id === chatId ? 'bg-sky-50 text-sky-700 font-semibold' : 'text-gray-700 hover:bg-gray-100'"
+            :aria-current="item.id === chatId ? 'page' : null"
+            :title="item.title ?? 'New chat'">
+            <span x-text="item.title ?? 'New chat'" :class="{ 'italic text-gray-400': item.title == null }"></span>
+          </a>
 
-      <template x-for="(message, index) in messages" :key="index">
-        <div class="flex" :class="message.role === 'user' ? 'justify-end' : 'justify-start'">
-          <div class="max-w-[85%] px-4 py-2.5 text-sm rounded-2xl"
-            :class="message.role === 'user' ? 'bg-sky-600 text-white' : 'bg-white text-gray-900 shadow-sm'">
-            <details x-show="message.reasoning !== ''" class="mb-2 text-xs text-gray-500">
-              <summary class="cursor-pointer select-none">Thinking</summary>
-              <div class="mt-1 whitespace-pre-wrap break-words" x-text="message.reasoning"></div>
-            </details>
+          <button type="button" x-show="confirmDeleteId !== item.id"
+            class="absolute right-1 top-1/2 -translate-y-1/2 p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 md:opacity-0 md:group-hover:opacity-100 focus:opacity-100"
+            aria-label="Delete chat" @click="confirmDeleteId = item.id">
+            <span class="icon-delete block size-4 bg-current" aria-hidden="true"></span>
+          </button>
 
-            <div class="whitespace-pre-wrap break-words" x-text="message.content"></div>
-
-            {# Waiting for the first words of the reply (the model may be loading) #}
-            <span x-show="message.role === 'assistant' && message.content === '' && sending && index === messages.length - 1"
-              class="icon-loading inline-block size-5 bg-current text-gray-400" aria-label="Waiting for reply"></span>
-          </div>
+          <form x-cloak x-show="confirmDeleteId === item.id" method="post" :action="`/chat/${item.id}/delete`"
+            class="flex items-center gap-2 px-3 py-1.5 text-xs" @keydown.escape="confirmDeleteId = null">
+            <input type="hidden" name="returnTo" :value="currentPath()">
+            <span class="flex-1 text-gray-600">Delete this chat?</span>
+            <button type="submit" class="px-2 py-1 font-bold text-white bg-red-600 hover:bg-red-700 rounded">Delete</button>
+            <button type="button" class="px-2 py-1 rounded hover:bg-gray-100" @click="confirmDeleteId = null">Cancel</button>
+          </form>
         </div>
       </template>
+    </nav>
+  </aside>
 
-      <div x-cloak x-show="error" class="p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert" x-text="error"></div>
+  <div class="flex flex-col flex-1 min-w-0">
+    <div class="shrink-0 flex flex-wrap items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
+      <button type="button" class="md:hidden -ml-1 p-1.5 rounded-md text-gray-600 hover:bg-gray-100" aria-label="Show chats" @click="listOpen = true">
+        <span class="icon-chats block size-5 bg-current" aria-hidden="true"></span>
+      </button>
+
+      <h1 class="min-w-0 flex-1 text-lg font-bold truncate" x-text="chatTitle">{{ chat.title if chat and chat.title else 'New chat' }}</h1>
+
+      {% if chatModel %}
+        <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Change the model in Settings">{{ chatModel }}</a>
+      {% endif %}
+      {% if imageModel %}
+        <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Images are made with this model; change it in Settings">Images: {{ imageModel }}</a>
+      {% endif %}
     </div>
+
+    <div x-ref="messages" class="flex-1 min-h-0 overflow-y-auto px-4 py-6">
+      <div class="mx-auto max-w-3xl space-y-4">
+        {% if modelProblem %}
+          <div class="flex flex-wrap items-center gap-3 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
+            <span class="flex-1">{{ modelProblem }}</span>
+            <a href="/settings" class="px-3 py-1.5 font-bold rounded-md bg-white border border-amber-300 hover:bg-amber-100">Open Settings</a>
+          </div>
+        {% endif %}
+
+        <p x-show="messages.length === 0" class="pt-16 text-sm text-center text-gray-500">Send a message to start a conversation.</p>
+
+        <template x-for="(message, index) in messages" :key="index">
+          {# A reply that only called a tool, without saying anything, isn't shown; the tool's result is #}
+          <div x-show="message.role !== 'assistant' || message.content !== '' || message.reasoning !== ''">
+            <template x-if="message.role === 'user'">
+              <div class="flex justify-end">
+                <div class="max-w-[85%] px-4 py-2.5 text-sm rounded-2xl bg-sky-600 text-white whitespace-pre-wrap break-words" x-text="message.content"></div>
+              </div>
+            </template>
+
+            <template x-if="message.role === 'assistant'">
+              <div class="flex justify-start">
+                <div class="max-w-[85%] px-4 py-2.5 text-sm rounded-2xl bg-white text-gray-900 shadow-sm">
+                  <details x-show="message.reasoning !== ''" class="text-xs text-gray-500" :class="{ 'mb-2': message.content !== '' }">
+                    <summary class="cursor-pointer select-none">Thinking</summary>
+                    <div class="mt-1 whitespace-pre-wrap break-words" x-text="message.reasoning"></div>
+                  </details>
+
+                  <div x-show="message.content !== ''" class="whitespace-pre-wrap break-words" x-text="message.content"></div>
+                </div>
+              </div>
+            </template>
+
+            {# A tool's result: the image it made, its progress, or what went wrong #}
+            <template x-if="message.role === 'tool'">
+              <div class="flex justify-start">
+                <figure class="w-80 sm:w-96 max-w-[85%] p-2 bg-white rounded-2xl shadow-sm">
+                  <div x-show="message.pending" class="flex aspect-square items-center justify-center gap-2 rounded-xl bg-gray-100 text-sm text-gray-500">
+                    <span class="icon-loading inline-block size-5 bg-current" aria-hidden="true"></span>
+                    Creating image…
+                  </div>
+
+                  <template x-if="message.imageId">
+                    <a :href="`/images/${message.imageId}`" target="_blank" title="Open full size">
+                      <img :src="`/images/${message.imageId}`" :alt="message.prompt ?? 'Generated image'" class="w-full rounded-xl"
+                        @load="if (index === messages.length - 1 || index === messages.length - 2) scrollToBottom()">
+                    </a>
+                  </template>
+
+                  <p x-show="!message.pending && !message.imageId" class="px-2 py-1 text-sm text-gray-600" x-text="message.content"></p>
+
+                  <figcaption x-show="message.prompt" class="px-2 pt-2 pb-1 text-xs text-gray-500" x-text="message.prompt"></figcaption>
+                </figure>
+              </div>
+            </template>
+          </div>
+        </template>
+
+        {# Waiting for the model to start (it may be loading, or thinking about a tool's result) #}
+        <div x-cloak x-show="isWaiting()" class="flex justify-start">
+          <div class="px-4 py-2.5 rounded-2xl bg-white shadow-sm">
+            <span class="icon-loading block size-5 bg-current text-gray-400" aria-label="Waiting for reply"></span>
+          </div>
+        </div>
+
+        <div x-cloak x-show="error" class="p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert" x-text="error"></div>
+      </div>
+    </div>
+
+    <form class="shrink-0 px-4 py-3 bg-white border-t border-gray-200" @submit.prevent="send()">
+      <div class="mx-auto max-w-3xl flex items-end gap-2">
+        <label class="sr-only" for="chat-input">Message</label>
+        <textarea id="chat-input" x-ref="input" x-model="input" @keydown="onKeydown($event)" rows="2"
+          placeholder="Message {{ config.appName }}… (Shift+Enter for a new line)"
+          class="flex-1 resize-none p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"
+          {% if modelProblem %}disabled{% endif %}></textarea>
+
+        <button type="submit" x-show="!sending" :disabled="input.trim() === '' || canSend === false"
+          class="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg disabled:opacity-50 disabled:hover:bg-sky-500">
+          <span class="icon-send inline-block size-4 bg-current" aria-hidden="true"></span>
+          Send
+        </button>
+        <button type="button" x-cloak x-show="sending" @click="stop()"
+          class="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-gray-700 hover:bg-gray-800 rounded-lg">
+          <span class="icon-stop inline-block size-4 bg-current" aria-hidden="true"></span>
+          Stop
+        </button>
+      </div>
+    </form>
   </div>
-
-  <form class="shrink-0 px-4 py-3 bg-white border-t border-gray-200" @submit.prevent="send()">
-    <div class="mx-auto max-w-3xl flex items-end gap-2">
-      <label class="sr-only" for="chat-input">Message</label>
-      <textarea id="chat-input" x-ref="input" x-model="input" @keydown="onKeydown($event)" rows="2"
-        placeholder="Message {{ config.appName }}… (Shift+Enter for a new line)"
-        class="flex-1 resize-none p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"
-        {% if models.length == 0 %}disabled{% endif %}></textarea>
-
-      <button type="submit" x-show="!sending" :disabled="input.trim() === '' || model === ''"
-        class="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg disabled:opacity-50 disabled:hover:bg-sky-500">
-        <span class="icon-send inline-block size-4 bg-current" aria-hidden="true"></span>
-        Send
-      </button>
-      <button type="button" x-cloak x-show="sending" @click="stop()"
-        class="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-gray-700 hover:bg-gray-800 rounded-lg">
-        <span class="icon-stop inline-block size-4 bg-current" aria-hidden="true"></span>
-        Stop
-      </button>
-    </div>
-  </form>
 </div>
 {% endblock body %}
