@@ -319,7 +319,9 @@ export const POST = async function (ctx) {
   }
 
   let chat = null
-  let history = []
+
+  // Not saved with the chat: it describes the tools as they are now, which can change between messages
+  const history = [tools.describeTools()]
 
   if (args.chatId != null) {
     chat = chats.getChat(args.chatId)
@@ -329,7 +331,10 @@ export const POST = async function (ctx) {
     }
 
     const savedMessages = chats.getMessages(chat.id)
-    history = savedMessages.map(toModelMessage)
+
+    for (const message of savedMessages) {
+      history.push(toModelMessage(message))
+    }
   }
 
   history.push({ role: `user`, content: args.content })

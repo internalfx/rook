@@ -36,6 +36,23 @@ export const getEnabledTools = function () {
   return tools
 }
 
+// A system message telling the model which tools it has right now. Without it, a chat that used a
+// tool earlier, when that tool has since been turned off, leads the model to write out a fake tool
+// call as plain text. Built for each request, so it always matches the current settings.
+export const describeTools = function () {
+  const notes = []
+
+  const imageModel = settings.get(`imageModel`)
+
+  if (imageModel != null) {
+    notes.push(`You can create images with the generate_image tool when the user asks for one.`)
+  } else {
+    notes.push(`Image generation is turned off right now, so you can't create images, even if you did earlier in this conversation. If the user asks for an image, tell them image generation is off and that they can turn it on by choosing an image model on the Settings page.`)
+  }
+
+  return { role: `system`, content: notes.join(`\n\n`) }
+}
+
 // The prompt the model gave generate_image, or null when the arguments aren't valid JSON yet
 export const readImagePrompt = function (argumentsText) {
   try {
@@ -91,6 +108,7 @@ export const runTool = async function ({ name, argumentsText, signal }) {
 
 export default {
   getEnabledTools,
+  describeTools,
   readImagePrompt,
   runTool,
 }
