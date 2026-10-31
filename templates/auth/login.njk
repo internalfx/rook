@@ -1,0 +1,21 @@
+{% extends "layouts/minimal" %}
+
+{% block title %}Log in · {{ config.appName }}{% endblock %}
+
+{% block body %}
+<form method="post" action="/auth/login" class="bg-white rounded-lg shadow-md p-8 lg:p-12 space-y-4">
+  <h1 class="text-xl font-bold">Log in</h1>
+
+  <div>
+    <label class="text-xs" for="email">Email</label>
+    <input name="email" class="w-full focus:ring-0 focus:border-gray-600 p-2 text-sm border border-gray-300 rounded-lg" value="{{ ctx.query.username }}" placeholder="you@example.com" type="email" id="email" autocomplete="username" required {% if not ctx.query.username %}autofocus{% endif %} />
+  </div>
+  <div>
+    <label class="text-xs" for="password">Password</label>
+    <input name="password" class="w-full focus:ring-0 focus:border-gray-600 p-2 text-sm border border-gray-300 rounded-lg" placeholder="Password" type="password" id="password" autocomplete="current-password" required {% if ctx.query.username %}autofocus{% endif %} />
+  </div>
+  <button type="submit" class="flex justify-center items-center px-5 py-3 text-md font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">
+    <span>Log in</span>
+  </button>
+</form>
+{% endblock body %}

@@ -1,0 +1,44 @@
+{#
+  Flash messages as toasts in the bottom-right corner, so they never shift the page.
+  Success and info messages close themselves after a few seconds (paused while hovered or focused);
+  errors stay until closed.
+#}
+{% set flashes = ctx.getFlash() %}
+{% if flashes.length > 0 %}
+  <div class="fixed inset-x-4 bottom-4 z-50 flex flex-col items-end gap-2 pointer-events-none sm:left-auto sm:w-96">
+    {% for flash in flashes %}
+      {% set message = flash[0] %}
+      {% set type = flash[1] %}
+      {% set colors = 'border-sky-200 bg-sky-50 text-sky-800' %}
+      {% set role = 'status' %}
+      {% set autoClose = 'true' %}
+      {% if type == 'error' %}
+        {% set colors = 'border-red-200 bg-red-50 text-red-800' %}
+        {% set role = 'alert' %}
+        {% set autoClose = 'false' %}
+      {% elif type == 'success' %}
+        {% set colors = 'border-green-200 bg-green-50 text-green-800' %}
+      {% endif %}
+      <div x-data="{
+          show: true,
+          timer: null,
+          start () {
+            if ({{ autoClose }}) {
+              this.timer = setTimeout(() => { this.show = false }, 5000)
+            }
+          },
+          stop () {
+            clearTimeout(this.timer)
+          },
+        }"
+        x-init="start()" @mouseenter="stop()" @mouseleave="start()" @focusin="stop()" @focusout="start()"
+        x-show="show" x-transition.opacity.duration.200ms
+        class="pointer-events-auto w-full flex items-start gap-3 p-4 text-sm rounded-lg border shadow-lg {{ colors }}" role="{{ role }}">
+        <div class="flex-1">{{ message }}</div>
+        <button type="button" class="-m-1 p-1 rounded opacity-60 hover:opacity-100 hover:bg-black/5" aria-label="Dismiss" @click="show = false">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}

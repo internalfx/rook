@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>
+      {% block title %}{{ config.appName }}{% endblock %}
+    </title>
+    <meta data-n-head="ssr" name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui">
+
+    <meta name="theme-color" content="#ffffff">
+    <link rel="icon" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/manifest.json">
+
+    <link rel="stylesheet" href="/dist/application.css">
+    <script defer src="/static/alpine.min.js"></script>
+
+    <style>
+      [x-cloak] { display: none !important; }
+    </style>
+
+    <script>
+      // If this page loads inside one of our tabs (e.g. the session expired), take over the whole window
+      try {
+        if (window.top !== window.self && window.top.location.origin === window.location.origin) {
+          window.top.location.href = window.location.href
+        }
+      } catch (err) {}
+    </script>
+
+    {% block head %}
+    {% endblock %}
+  </head>
+
+  <body class="bg-gray-100 text-gray-900">
+    <main class="mx-auto max-w-screen-sm px-4 py-12 sm:py-20">
+      <div class="mb-8 text-center text-2xl font-bold">{{ config.appName }}</div>
+      {# Messages stay inline here, next to the small centered form, rather than as toasts #}
+      {% for flash in ctx.getFlash() %}
+        {% set colors = 'border-sky-200 bg-sky-50 text-sky-800' %}
+        {% set role = 'status' %}
+        {% if flash[1] == 'error' %}
+          {% set colors = 'border-red-200 bg-red-50 text-red-800' %}
+          {% set role = 'alert' %}
+        {% elif flash[1] == 'success' %}
+          {% set colors = 'border-green-200 bg-green-50 text-green-800' %}
+        {% endif %}
+        <div class="mb-4 p-4 text-sm rounded-lg border {{ colors }}" role="{{ role }}">{{ flash[0] }}</div>
+      {% endfor %}
+      {% block body %}
+      {% endblock %}
+    </main>
+  </body>
+</html>

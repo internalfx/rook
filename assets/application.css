@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+table tr td {
+  vertical-align: middle;
+}
