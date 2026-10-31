@@ -1,4 +1,5 @@
 
+import crypto from 'node:crypto'
 import lemonade from './lemonade.js'
 import images from './images.js'
 import settings from './settings.js'
@@ -30,6 +31,12 @@ const definitionsByName = {
   generate_image: generateImageTool,
 }
 
+// The image size choices in Settings, from small to large ("WIDTHxHEIGHT")
+export const imageSizes = [`256x256`, `512x512`, `768x768`]
+
+// Used until a size is chosen in Settings; it's what the image models produce by default
+export const defaultImageSize = `512x512`
+
 // The chat tools a new chat starts with, from the current Settings
 export const toolsFromSettings = function () {
   const chatTools = {}
@@ -37,7 +44,8 @@ export const toolsFromSettings = function () {
   const imageModel = settings.get(`imageModel`)
 
   if (imageModel != null) {
-    chatTools.generate_image = { model: imageModel }
+    const size = settings.get(`imageSize`) ?? defaultImageSize
+    chatTools.generate_image = { model: imageModel, size }
   }
 
   return chatTools
@@ -75,7 +83,12 @@ const runGenerateImage = async function ({ argumentsText, toolSettings, signal }
     return { content: `Image generation failed: no prompt was given.`, imageId: null }
   }
 
-  const pngBuffer = await lemonade.generateImage({ model: toolSettings.model, prompt, signal })
+  // A new seed each time, so asking again gives a different image. Chats from before sizes were
+  // saved have no size, which leaves the model's own default.
+  const seed = crypto.randomInt(0, 2147483647)
+  const size = toolSettings.size ?? null
+
+  const pngBuffer = await lemonade.generateImage({ model: toolSettings.model, prompt, size, seed, signal })
   const imageId = await images.saveImage(pngBuffer)
 
   return {
@@ -113,6 +126,8 @@ export const runTool = async function ({ name, argumentsText, chatTools, signal 
 }
 
 export default {
+  imageSizes,
+  defaultImageSize,
   toolsFromSettings,
   getToolDefinitions,
   readImagePrompt,

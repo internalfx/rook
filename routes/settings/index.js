@@ -2,10 +2,24 @@
 import joi from '../../services/joi.js'
 import lemonade from '../../services/lemonade.js'
 import settings from '../../services/settings.js'
+import tools from '../../services/tools.js'
 import { formatContextLength } from '../../lib/format.js'
 
 // Value of the "Off" choice for the image model
 const noImageModel = `none`
+
+// The image size choices, in the order of tools.imageSizes
+const imageSizeNames = [`Small`, `Medium`, `Large`]
+
+const imageSizeOptions = tools.imageSizes.map(function (size, index) {
+  const [width, height] = size.split(`x`)
+
+  return {
+    value: size,
+    name: imageSizeNames[index],
+    dimensions: `${width} × ${height}`,
+  }
+})
 
 const toModelOption = function (model) {
   return {
@@ -47,6 +61,7 @@ export const GET = async function (ctx) {
 
   const chatModel = settings.get(`chatModel`)
   const imageModel = settings.get(`imageModel`)
+  const imageSize = settings.get(`imageSize`) ?? tools.defaultImageSize
 
   ctx.body = ctx.nunjucks(`settings/index`, {
     modelsError,
@@ -54,6 +69,8 @@ export const GET = async function (ctx) {
     imageModels,
     chatModel,
     imageModel,
+    imageSize,
+    imageSizeOptions,
     noImageModel,
     isChatModelListed: isListed(chatModels, chatModel),
     isImageModelListed: isListed(imageModels, imageModel),
@@ -67,6 +84,7 @@ export const POST = async function (ctx) {
     args = await joi.object({
       chatModel: joi.string().trim(),
       imageModel: joi.string().trim(),
+      imageSize: joi.string().trim(),
     }).validateAsync(ctx.request.body)
   } catch (err) {
     ctx.addFlash(err.message, `error`)
@@ -100,8 +118,17 @@ export const POST = async function (ctx) {
     }
   }
 
+  if (args.imageSize != null && tools.imageSizes.includes(args.imageSize) === false) {
+    ctx.addFlash(`"${args.imageSize}" isn't one of the image sizes.`, `error`)
+    return ctx.redirect(`/settings`)
+  }
+
   if (args.chatModel != null) {
     settings.set(`chatModel`, args.chatModel)
+  }
+
+  if (args.imageSize != null) {
+    settings.set(`imageSize`, args.imageSize)
   }
 
   if (turnImagesOff) {

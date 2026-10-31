@@ -6,6 +6,12 @@ import config from '../configure.js'
 
 const requestTimeout = 1000 * 10
 
+// For requests that can legitimately run for minutes: loading a big model, or generating a large
+// image with a slow model. Bun's fetch has its own 5-minute default timeout, which is too short
+// for these, so those requests switch it off (`timeout: false`, a Bun-only fetch option) and use
+// this limit instead.
+const slowRequestLimit = 1000 * 60 * 10
+
 const getHeaders = function () {
   return {
     Authorization: `Bearer ${config.lemonade.apikey}`,
@@ -66,8 +72,9 @@ export const listImageModels = async function () {
 
 // Starts a streamed chat completion and returns the upstream Response, whose body is a
 // server-sent event stream of "data: {...}" lines ending with "data: [DONE]".
-// There is no timeout: the first reply can wait for the model to load. Pass `signal`
-// to cancel it, e.g. when the browser disconnects. `tools` are OpenAI-style function definitions.
+// Lemonade has slowRequestLimit to start replying, which covers loading the model; once the
+// stream begins, a long reply can keep going. Pass `signal` to cancel it, e.g. when the browser
+// disconnects. `tools` are OpenAI-style function definitions.
 export const streamChat = async function ({ model, messages, tools = [], signal }) {
   const url = `${config.lemonade.host}/api/v1/chat/completions`
 
@@ -81,12 +88,25 @@ export const streamChat = async function ({ model, messages, tools = [], signal 
     payload.tools = tools
   }
 
-  const response = await fetch(url, {
-    method: `POST`,
-    headers: getHeaders(),
-    body: JSON.stringify(payload),
-    signal,
-  })
+  // Only waiting for the reply to start is limited, so the timer stops once fetch resolves
+  const startLimit = new AbortController()
+  const startTimer = setTimeout(function () {
+    startLimit.abort(new Error(`Lemonade didn't start replying within ${slowRequestLimit / 60000} minutes`))
+  }, slowRequestLimit)
+
+  let response = null
+
+  try {
+    response = await fetch(url, {
+      method: `POST`,
+      headers: getHeaders(),
+      body: JSON.stringify(payload),
+      signal: AbortSignal.any([signal, startLimit.signal]),
+      timeout: false,
+    })
+  } finally {
+    clearTimeout(startTimer)
+  }
 
   if (response.ok === false) {
     const errorText = await response.text()
@@ -151,23 +171,31 @@ export const writeTitle = async function ({ model, userText, replyText }) {
   return title
 }
 
-// Returns the image as a PNG buffer. The model's own defaults (size, steps) are used.
-// There is no timeout, since loading the model and generating can take a while; pass `signal` to cancel.
-export const generateImage = async function ({ model, prompt, signal }) {
+// Returns the image as a PNG buffer. `size` is "WIDTHxHEIGHT" (Lemonade rounds each side up to a
+// multiple of 64); without it, the model's own default is used. The seed picks the variation;
+// the same prompt and seed give the same image. Loading the model and generating can take minutes,
+// so the limit is slowRequestLimit; pass `signal` to cancel.
+export const generateImage = async function ({ model, prompt, size = null, seed, signal }) {
   const url = `${config.lemonade.host}/api/v1/images/generations`
 
   const payload = {
     model,
     prompt,
+    seed,
     n: 1,
     response_format: `b64_json`,
+  }
+
+  if (size != null) {
+    payload.size = size
   }
 
   const response = await fetch(url, {
     method: `POST`,
     headers: getHeaders(),
     body: JSON.stringify(payload),
-    signal,
+    signal: AbortSignal.any([signal, AbortSignal.timeout(slowRequestLimit)]),
+    timeout: false,
   })
 
   if (response.ok === false) {

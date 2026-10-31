@@ -78,6 +78,24 @@
         </div>
       </fieldset>
 
+      <fieldset class="bg-white rounded-lg shadow-sm">
+        <div class="px-4 py-3 border-b border-gray-200">
+          <legend class="font-bold">Image size</legend>
+          <p class="mt-0.5 text-xs text-gray-500">Larger images take longer, and Qwen-Image can take several minutes at Large.</p>
+        </div>
+
+        <div class="divide-y divide-gray-100">
+          {% for option in imageSizeOptions %}
+            <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+              <input type="radio" name="imageSize" value="{{ option.value }}" class="text-sky-600 focus:ring-sky-500"
+                {% if option.value == imageSize %}checked{% endif %} required>
+              <span class="text-sm font-medium">{{ option.name }}</span>
+              <span class="text-xs text-gray-500">{{ option.dimensions }}</span>
+            </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+
       <button type="submit" class="px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Save</button>
     </form>
   {% endif %}

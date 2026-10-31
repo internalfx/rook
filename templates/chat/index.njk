@@ -333,14 +333,14 @@
           <span class="min-w-0 max-w-full text-xs text-gray-500 truncate" title="Chosen when this chat started">{{ chatModel }}</span>
         {% endif %}
         {% if imageModel %}
-          <span class="min-w-0 max-w-full text-xs text-gray-500 truncate" title="Chosen when this chat started">Images: {{ imageModel }}</span>
+          <span class="min-w-0 max-w-full text-xs text-gray-500 truncate" title="Chosen when this chat started">Images: {{ imageModel }}{% if imageSize %} · {{ imageSize | replace('x', '×') }}{% endif %}</span>
         {% endif %}
       {% else %}
         {% if chatModel %}
           <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to new chats; change in Settings">{{ chatModel }}</a>
         {% endif %}
         {% if imageModel %}
-          <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to new chats; change in Settings">Images: {{ imageModel }}</a>
+          <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to new chats; change in Settings">Images: {{ imageModel }}{% if imageSize %} · {{ imageSize | replace('x', '×') }}{% endif %}</a>
         {% endif %}
       {% endif %}
     </div>

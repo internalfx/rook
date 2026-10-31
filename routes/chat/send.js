@@ -11,6 +11,9 @@ import tools from '../../services/tools.js'
 // last round are answered as not run.
 const maxRounds = 5
 
+// How often to send the browser a keep-alive line while nothing else is being sent
+const keepAliveInterval = 1000 * 15
+
 // Used when the model can't write a title: the start of the first message
 const fallbackTitle = function (text) {
   const firstLine = text.trim().split(`\n`)[0]
@@ -224,6 +227,15 @@ const runConversation = async function ({ firstUpstream, history, chat, userText
   // What the model said and drew, for writing the chat's title
   const titleNotes = []
 
+  // Nothing is sent while a tool runs, which can be minutes for a slow image model, and an idle
+  // connection may be dropped (which would stop the tool). A comment line (": ...") keeps it
+  // active; the browser only reads "data:" lines, so it ignores these.
+  const keepAlive = setInterval(function () {
+    if (output.writable) {
+      output.write(`: keep-alive\n\n`)
+    }
+  }, keepAliveInterval)
+
   let upstream = firstUpstream
 
   try {
@@ -305,6 +317,7 @@ const runConversation = async function ({ firstUpstream, history, chat, userText
     console.error(`Chat conversation failed`, err)
     sendEvent({ type: `error`, message: err.message })
   } finally {
+    clearInterval(keepAlive)
     output.end()
   }
 }
