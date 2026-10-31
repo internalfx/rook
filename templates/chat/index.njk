@@ -327,11 +327,21 @@
 
       <h1 class="min-w-0 flex-1 text-lg font-bold truncate" x-text="chatTitle">{{ chat.title if chat and chat.title else 'New chat' }}</h1>
 
-      {% if chatModel %}
-        <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Change the model in Settings">{{ chatModel }}</a>
-      {% endif %}
-      {% if imageModel %}
-        <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Images are made with this model; change it in Settings">Images: {{ imageModel }}</a>
+      {# A new chat takes its models from Settings; an existing chat keeps the ones it started with #}
+      {% if chat %}
+        {% if chatModel %}
+          <span class="min-w-0 max-w-full text-xs text-gray-500 truncate" title="Chosen when this chat started">{{ chatModel }}</span>
+        {% endif %}
+        {% if imageModel %}
+          <span class="min-w-0 max-w-full text-xs text-gray-500 truncate" title="Chosen when this chat started">Images: {{ imageModel }}</span>
+        {% endif %}
+      {% else %}
+        {% if chatModel %}
+          <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to new chats; change in Settings">{{ chatModel }}</a>
+        {% endif %}
+        {% if imageModel %}
+          <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to new chats; change in Settings">Images: {{ imageModel }}</a>
+        {% endif %}
       {% endif %}
     </div>
 
@@ -339,8 +349,10 @@
       <div class="mx-auto max-w-3xl space-y-4">
         {% if modelProblem %}
           <div class="flex flex-wrap items-center gap-3 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
-            <span class="flex-1">{{ modelProblem }}</span>
-            <a href="/settings" class="px-3 py-1.5 font-bold rounded-md bg-white border border-amber-300 hover:bg-amber-100">Open Settings</a>
+            <span class="flex-1">{{ modelProblem.message }}</span>
+            {% if modelProblem.link %}
+              <a href="{{ modelProblem.link.href }}" class="px-3 py-1.5 font-bold rounded-md bg-white border border-amber-300 hover:bg-amber-100">{{ modelProblem.link.label }}</a>
+            {% endif %}
           </div>
         {% endif %}
 

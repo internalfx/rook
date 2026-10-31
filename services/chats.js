@@ -6,10 +6,10 @@ import images from './images.js'
 const selectChats = db.query(`SELECT id, title, model, updatedAt FROM chats ORDER BY updatedAt DESC`)
 const selectChat = db.query(`SELECT * FROM chats WHERE id = $id`)
 const insertChat = db.query(`
-  INSERT INTO chats (id, title, model, createdAt, updatedAt)
-  VALUES ($id, NULL, $model, $now, $now)
+  INSERT INTO chats (id, title, model, tools, createdAt, updatedAt)
+  VALUES ($id, NULL, $model, $tools, $now, $now)
 `)
-const updateChatActivity = db.query(`UPDATE chats SET model = $model, updatedAt = $now WHERE id = $id`)
+const updateChatActivity = db.query(`UPDATE chats SET updatedAt = $now WHERE id = $id`)
 const updateChatTitle = db.query(`UPDATE chats SET title = $title WHERE id = $id`)
 const deleteChatRow = db.query(`DELETE FROM chats WHERE id = $id`)
 
@@ -29,8 +29,17 @@ export const listChats = function () {
   return selectChats.all()
 }
 
+// tools comes back parsed: an object keyed by tool name, e.g. { generate_image: { model } }
 export const getChat = function (id) {
-  return selectChat.get({ id })
+  const row = selectChat.get({ id })
+
+  if (row == null) {
+    return null
+  }
+
+  const tools = JSON.parse(row.tools)
+
+  return { ...row, tools }
 }
 
 // toolCalls comes back parsed: an array in the OpenAI format, or null
@@ -50,20 +59,22 @@ export const getMessages = function (chatId) {
   return messages
 }
 
-export const createChat = function (model) {
+// The model and tools are fixed for the chat's whole life (see migrations/004-chat-config.sql)
+export const createChat = function ({ model, tools }) {
   const id = cuid()
   const now = new Date().toISOString()
+  const toolsText = JSON.stringify(tools)
 
-  insertChat.run({ id, model, now })
+  insertChat.run({ id, model, tools: toolsText, now })
 
   return getChat(id)
 }
 
-// Records the model in use and moves the chat to the top of the list
-export const touchChat = function (id, model) {
+// Moves the chat to the top of the list
+export const touchChat = function (id) {
   const now = new Date().toISOString()
 
-  updateChatActivity.run({ id, model, now })
+  updateChatActivity.run({ id, now })
 }
 
 export const setTitle = function (id, title) {

@@ -3,8 +3,10 @@ import lemonade from './lemonade.js'
 import images from './images.js'
 import settings from './settings.js'
 
-// Tools the chat model can call, as OpenAI-style function definitions. Each tool is only
-// offered when it's set up, e.g. generate_image needs an image model chosen in Settings.
+// Tools the chat model can call, as OpenAI-style function definitions. Each chat stores the tools
+// it was created with, and their settings, as an object keyed by tool name ("chat tools"):
+//   { generate_image: { model: `SDXL-Turbo` } }
+// They never change for that chat; Settings only decide what new chats get.
 
 const generateImageTool = {
   type: `function`,
@@ -24,33 +26,36 @@ const generateImageTool = {
   },
 }
 
-export const getEnabledTools = function () {
-  const tools = []
-
-  const imageModel = settings.get(`imageModel`)
-
-  if (imageModel != null) {
-    tools.push(generateImageTool)
-  }
-
-  return tools
+const definitionsByName = {
+  generate_image: generateImageTool,
 }
 
-// A system message telling the model which tools it has right now. Without it, a chat that used a
-// tool earlier, when that tool has since been turned off, leads the model to write out a fake tool
-// call as plain text. Built for each request, so it always matches the current settings.
-export const describeTools = function () {
-  const notes = []
+// The chat tools a new chat starts with, from the current Settings
+export const toolsFromSettings = function () {
+  const chatTools = {}
 
   const imageModel = settings.get(`imageModel`)
 
   if (imageModel != null) {
-    notes.push(`You can create images with the generate_image tool when the user asks for one.`)
-  } else {
-    notes.push(`Image generation is turned off right now, so you can't create images, even if you did earlier in this conversation. If the user asks for an image, tell them image generation is off and that they can turn it on by choosing an image model on the Settings page.`)
+    chatTools.generate_image = { model: imageModel }
   }
 
-  return { role: `system`, content: notes.join(`\n\n`) }
+  return chatTools
+}
+
+// The definitions to offer the model for a chat's tools
+export const getToolDefinitions = function (chatTools) {
+  const definitions = []
+
+  for (const name of Object.keys(chatTools)) {
+    const definition = definitionsByName[name]
+
+    if (definition != null) {
+      definitions.push(definition)
+    }
+  }
+
+  return definitions
 }
 
 // The prompt the model gave generate_image, or null when the arguments aren't valid JSON yet
@@ -63,20 +68,14 @@ export const readImagePrompt = function (argumentsText) {
   }
 }
 
-const runGenerateImage = async function ({ argumentsText, signal }) {
+const runGenerateImage = async function ({ argumentsText, toolSettings, signal }) {
   const prompt = readImagePrompt(argumentsText)
 
   if (prompt == null || prompt.trim() === ``) {
     return { content: `Image generation failed: no prompt was given.`, imageId: null }
   }
 
-  const imageModel = settings.get(`imageModel`)
-
-  if (imageModel == null) {
-    return { content: `Image generation is turned off.`, imageId: null }
-  }
-
-  const pngBuffer = await lemonade.generateImage({ model: imageModel, prompt, signal })
+  const pngBuffer = await lemonade.generateImage({ model: toolSettings.model, prompt, signal })
   const imageId = await images.saveImage(pngBuffer)
 
   return {
@@ -88,10 +87,17 @@ const runGenerateImage = async function ({ argumentsText, signal }) {
 // Runs one tool call and returns { content, imageId }. `content` is what the model is told
 // about the result. Failures are reported to the model as text rather than thrown, so it can
 // explain them to the user; a stopped call still throws, so the caller can tell it was stopped.
-export const runTool = async function ({ name, argumentsText, signal }) {
+export const runTool = async function ({ name, argumentsText, chatTools, signal }) {
+  const toolSettings = chatTools[name]
+
+  // Only a chat's own tools are offered, so this only catches a model inventing a name
+  if (toolSettings == null) {
+    return { content: `${name} isn't available in this chat.`, imageId: null }
+  }
+
   try {
     if (name === `generate_image`) {
-      const result = await runGenerateImage({ argumentsText, signal })
+      const result = await runGenerateImage({ argumentsText, toolSettings, signal })
       return result
     }
 
@@ -107,8 +113,8 @@ export const runTool = async function ({ name, argumentsText, signal }) {
 }
 
 export default {
-  getEnabledTools,
-  describeTools,
+  toolsFromSettings,
+  getToolDefinitions,
   readImagePrompt,
   runTool,
 }
