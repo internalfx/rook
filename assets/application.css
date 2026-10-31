@@ -3,3 +3,46 @@
 table tr td {
   vertical-align: middle;
 }
+
+/* Icons from static/icons are used as masks over the text colour (bg-current),
+   so they follow the colour of the label next to them */
+.icon-dashboard {
+  -webkit-mask: url(/static/icons/iconoven--dashboard.svg) center / contain no-repeat;
+  mask: url(/static/icons/iconoven--dashboard.svg) center / contain no-repeat;
+}
+.icon-chat {
+  -webkit-mask: url(/static/icons/mdi--chat-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--chat-outline.svg) center / contain no-repeat;
+}
+.icon-menu {
+  -webkit-mask: url(/static/icons/mdi--menu.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--menu.svg) center / contain no-repeat;
+}
+.icon-logout {
+  -webkit-mask: url(/static/icons/mdi--logout.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--logout.svg) center / contain no-repeat;
+}
+.icon-send {
+  -webkit-mask: url(/static/icons/mdi--send.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--send.svg) center / contain no-repeat;
+}
+.icon-stop {
+  -webkit-mask: url(/static/icons/mdi--stop.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--stop.svg) center / contain no-repeat;
+}
+.icon-plus {
+  -webkit-mask: url(/static/icons/mdi--plus.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--plus.svg) center / contain no-repeat;
+}
+.icon-loading {
+  -webkit-mask: url(/static/icons/line-md--loading-twotone-loop.svg) center / contain no-repeat;
+  mask: url(/static/icons/line-md--loading-twotone-loop.svg) center / contain no-repeat;
+}
+
+/* On wide screens the sidebar sits beside the page and can be closed. The choice is stored in
+   localStorage and set on <html> by a script in the layout's <head>, before the first paint. */
+@media (min-width: 64rem) {
+  html[data-sidebar="closed"] #sidebar {
+    display: none;
+  }
+}

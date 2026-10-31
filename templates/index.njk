@@ -4,4 +4,59 @@
 
 {% block body %}
   <h1 class="mb-6 text-2xl font-bold">Dashboard</h1>
+
+  <section class="bg-white rounded-lg shadow-sm">
+    <div class="flex items-baseline justify-between gap-4 px-4 py-3 border-b border-gray-200">
+      <h2 class="font-bold">Lemonade models</h2>
+      <span class="text-xs text-gray-500 truncate">{{ config.lemonade.host }}</span>
+    </div>
+
+    {% if modelsError %}
+      <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
+        Couldn't load models: {{ modelsError }}
+      </div>
+    {% elif models.length == 0 %}
+      <p class="p-4 text-sm text-gray-500">No models available.</p>
+    {% else %}
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="text-left text-xs text-gray-500">
+            <tr>
+              <th class="px-4 py-2 font-medium">Model</th>
+              <th class="px-4 py-2 font-medium">Capabilities</th>
+              <th class="px-4 py-2 font-medium">Recipe</th>
+              <th class="px-4 py-2 font-medium text-right">Size</th>
+              <th class="px-4 py-2 font-medium text-right">Context</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            {% for model in models %}
+              <tr>
+                <td class="px-4 py-2 font-medium whitespace-nowrap">
+                  {{ model.id }}
+                  {% if not model.downloaded %}
+                    <span class="ml-1 text-xs font-normal text-gray-400">not downloaded</span>
+                  {% endif %}
+                </td>
+                <td class="px-4 py-2">
+                  <div class="flex flex-wrap gap-1">
+                    {% for label in model.labels %}
+                      <span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">{{ label }}</span>
+                    {% endfor %}
+                  </div>
+                </td>
+                <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ model.recipe }}</td>
+                <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">
+                  {% if model.sizeGB != null %}{{ model.sizeGB }} GB{% else %}<span class="text-gray-400">—</span>{% endif %}
+                </td>
+                <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">
+                  {% if model.contextLength %}{{ model.contextLength }}{% else %}<span class="text-gray-400">—</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </section>
 {% endblock body %}
