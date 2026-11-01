@@ -3,12 +3,97 @@
 {# The settings scroll above a bar along the bottom, so Save stays in reach however long they get #}
 {% block mainClass %}flex flex-col overflow-hidden{% endblock %}
 
+{% block head %}
+<script>
+  document.addEventListener(`alpine:init`, () => {
+    // Asks before leaving with unsaved changes. Links within rook get a dialog that can save
+    // first; anything else (closing the tab, reloading, going back) gets the browser's own prompt.
+    Alpine.data(`settingsForm`, () => ({
+      // The form as it loaded, to compare against
+      savedState: ``,
+      isDirty: false,
+      // Set when saving or choosing "Don't save", so the browser's prompt doesn't follow
+      isLeaving: false,
+      // Where the link in the dialog was going
+      leaveTo: null,
+
+      init () {
+        this.savedState = this.readState()
+
+        window.addEventListener(`beforeunload`, (event) => {
+          if (this.isDirty === true && this.isLeaving === false) {
+            event.preventDefault()
+            // Older Safari only shows the prompt when this is set
+            event.returnValue = ``
+          }
+        })
+
+        document.addEventListener(`click`, (event) => this.onLinkClick(event))
+      },
+
+      readState () {
+        const data = new FormData(this.$root)
+        return new URLSearchParams(data).toString()
+      },
+
+      // A change made and then undone isn't a change
+      checkDirty () {
+        this.isDirty = this.readState() !== this.savedState
+      },
+
+      onLinkClick (event) {
+        if (this.isDirty === false || this.isLeaving === true || event.defaultPrevented === true) {
+          return
+        }
+
+        // These open the link somewhere else, so the page stays
+        const hasModifier = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+
+        if (event.button !== 0 || hasModifier) {
+          return
+        }
+
+        const link = event.target.closest(`a[href]`)
+
+        if (link == null || link.target === `_blank`) {
+          return
+        }
+
+        // A link to another site leaves rook, so it gets the browser's prompt instead
+        const url = new URL(link.href, window.location.href)
+
+        if (url.origin !== window.location.origin) {
+          return
+        }
+
+        event.preventDefault()
+        this.leaveTo = `${url.pathname}${url.search}${url.hash}`
+        this.$refs.leaveDialog.showModal()
+      },
+
+      // Saving redirects to where the link was going (see POST in routes/settings/index.js). The
+      // browser checks the form first, as the Save button does.
+      saveAndLeave () {
+        this.$refs.leaveDialog.close()
+        this.$refs.returnTo.value = this.leaveTo
+        this.$root.requestSubmit()
+      },
+
+      leaveWithoutSaving () {
+        this.isLeaving = true
+        window.location.href = this.leaveTo
+      },
+    }))
+  })
+</script>
+{% endblock %}
+
 {% block body %}
   {# One choice per model: its name, labels, size and context length #}
-  {% macro modelOption(name, model, current) %}
+  {% macro modelOption(name, model, current, required=true) %}
     <label class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
       <input type="radio" name="{{ name }}" value="{{ model.id }}" class="mt-0.5 text-sky-600 focus:ring-sky-500"
-        {% if model.id == current %}checked{% endif %} required>
+        {% if model.id == current %}checked{% endif %} {% if required %}required{% endif %}>
       <span class="flex-1 min-w-0">
         <span class="block text-sm font-medium break-words">{{ model.id }}</span>
         <span class="mt-1 flex flex-wrap items-center gap-1 text-xs text-gray-500">
@@ -43,7 +128,10 @@
         Couldn't load models: {{ modelsError }}
       </div>
     {% else %}
-      <form id="settings-form" method="post" action="/settings" class="max-w-3xl space-y-6">
+      <form id="settings-form" method="post" action="/settings" class="max-w-3xl space-y-6"
+        x-data="settingsForm" @input="checkDirty()" @change="checkDirty()" @submit="isLeaving = true">
+        {# Set by the leave dialog's Save, so saving goes on to where the link was going #}
+        <input type="hidden" name="returnTo" x-ref="returnTo">
         <fieldset class="bg-white rounded-lg shadow-sm">
           <div class="px-4 py-3 border-b border-gray-200">
             <legend class="font-bold">Chat model</legend>
@@ -139,6 +227,54 @@
             {{ toggleSwitch('webSearchOn', 'Search the web', isWebSearchOn) }}
           </div>
         </fieldset>
+
+        {# Switched off, the embedding model stays chosen for next time #}
+        <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ memoriesOn: {{ 'true' if isMemoriesSwitchOn else 'false' }} }">
+          <div class="flex items-start gap-4 px-4 py-3 border-b border-gray-200">
+            <div class="flex-1 min-w-0">
+              <legend class="font-bold">Memories</legend>
+              <p class="mt-0.5 text-xs text-gray-500">Lets the chat model save, search, change and delete <a href="/memories" class="underline hover:text-gray-800">memories</a>. Pinned memories are sent at the start of every chat; the rest are found by meaning with the embedding model below.</p>
+            </div>
+
+            {{ toggleSwitch('memoriesOn', 'Use memories', isMemoriesSwitchOn, 'memoriesOn') }}
+          </div>
+
+          <div class="transition-opacity" :class="{ 'opacity-50': !memoriesOn }">
+            <p class="px-4 pt-3 text-sm font-medium">Embedding model</p>
+
+            {% if embeddingModels.length == 0 %}
+              <p class="px-4 py-3 text-sm text-gray-500">The Lemonade server has no embedding models.</p>
+            {% else %}
+              {% if embeddingModel and not isEmbeddingModelListed %}
+                <div class="m-4 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
+                  The current model, "{{ embeddingModel }}", isn't on the Lemonade server any more. Choose another one.
+                </div>
+              {% endif %}
+
+              <div class="divide-y divide-gray-100">
+                {% for model in embeddingModels %}
+                  {{ modelOption('embeddingModel', model, embeddingModel, false) }}
+                {% endfor %}
+              </div>
+            {% endif %}
+          </div>
+        </fieldset>
+
+        {# Inside the form, so its buttons are plain buttons: a <form method="dialog"> can't go in another form.
+           A click on the backdrop lands on the dialog itself, so it cancels. #}
+        <dialog x-ref="leaveDialog" class="m-auto w-[calc(100%-2rem)] max-w-md p-0 rounded-lg shadow-xl backdrop:bg-black/30"
+          aria-labelledby="leave-dialog-title" @click.self="$el.close()">
+          <div class="p-5">
+            <h2 id="leave-dialog-title" class="text-base font-bold">Save your changes?</h2>
+            <p class="mt-2 text-sm text-gray-600">You have changes to Settings that haven't been saved.</p>
+
+            <div class="mt-5 flex flex-wrap justify-end gap-2">
+              <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="$refs.leaveDialog.close()">Cancel</button>
+              <button type="button" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50" @click="leaveWithoutSaving()">Don't save</button>
+              <button type="button" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md" @click="saveAndLeave()">Save</button>
+            </div>
+          </div>
+        </dialog>
       </form>
     {% endif %}
   </div>

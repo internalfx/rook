@@ -58,6 +58,14 @@ table tr td {
   -webkit-mask: url(/static/icons/mdi--information-outline.svg) center / contain no-repeat;
   mask: url(/static/icons/mdi--information-outline.svg) center / contain no-repeat;
 }
+.icon-memories {
+  -webkit-mask: url(/static/icons/mdi--brain.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--brain.svg) center / contain no-repeat;
+}
+.icon-clock {
+  -webkit-mask: url(/static/icons/mdi--clock-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--clock-outline.svg) center / contain no-repeat;
+}
 .icon-loading {
   -webkit-mask: url(/static/icons/line-md--loading-twotone-loop.svg) center / contain no-repeat;
   mask: url(/static/icons/line-md--loading-twotone-loop.svg) center / contain no-repeat;

@@ -40,6 +40,7 @@ const isListed = function (options, id) {
 export const GET = async function (ctx) {
   let chatModels = []
   let imageModels = []
+  let embeddingModels = []
   let modelsError = null
 
   try {
@@ -53,8 +54,13 @@ export const GET = async function (ctx) {
       return lemonade.hasLabel(model, `image`)
     })
 
+    const embeddingModelList = models.filter(function (model) {
+      return lemonade.hasLabel(model, `embeddings`)
+    })
+
     chatModels = chatModelList.map(toModelOption)
     imageModels = imageModelList.map(toModelOption)
+    embeddingModels = embeddingModelList.map(toModelOption)
   } catch (err) {
     console.error(err)
     modelsError = err.message
@@ -67,6 +73,9 @@ export const GET = async function (ctx) {
   const webDomainsText = tools.getWebDomains().join(`\n`)
   const isWebPagesOn = tools.isWebPagesOn()
   const isWebSearchOn = tools.isWebSearchOn()
+  const embeddingModel = tools.getEmbeddingModel()
+  // The switch shows what was chosen, even while there's no embedding model to make it work
+  const isMemoriesSwitchOn = settings.get(`memoriesOn`) === true
 
   ctx.body = ctx.nunjucks(`settings/index`, {
     modelsError,
@@ -82,6 +91,10 @@ export const GET = async function (ctx) {
     webDomainsText,
     isWebPagesOn,
     isWebSearchOn,
+    embeddingModels,
+    embeddingModel,
+    isEmbeddingModelListed: isListed(embeddingModels, embeddingModel),
+    isMemoriesSwitchOn,
   })
 }
 
@@ -99,6 +112,10 @@ export const POST = async function (ctx) {
       // The switch is a checkbox, which a form leaves out when it's off
       webPagesOn: joi.boolean(),
       webSearchOn: joi.boolean(),
+      memoriesOn: joi.boolean(),
+      embeddingModel: joi.string().trim(),
+      // Where to go once saved, when saving from the "Save your changes?" dialog
+      returnTo: joi.string(),
     }).validateAsync(ctx.request.body)
   } catch (err) {
     ctx.addFlash(err.message, `error`)
@@ -130,6 +147,25 @@ export const POST = async function (ctx) {
       ctx.addFlash(`"${args.imageModel}" isn't an image model on the Lemonade server.`, `error`)
       return ctx.redirect(`/settings`)
     }
+  }
+
+  if (args.embeddingModel != null) {
+    const embeddingModel = models.find(function (model) {
+      return model.id === args.embeddingModel
+    })
+
+    if (embeddingModel == null || lemonade.hasLabel(embeddingModel, `embeddings`) === false) {
+      ctx.addFlash(`"${args.embeddingModel}" isn't an embedding model on the Lemonade server.`, `error`)
+      return ctx.redirect(`/settings`)
+    }
+  }
+
+  // Memories are searched with the embedding model, so they can't be on without one
+  const hasEmbeddingModel = args.embeddingModel != null || tools.getEmbeddingModel() != null
+
+  if (args.memoriesOn === true && hasEmbeddingModel === false) {
+    ctx.addFlash(`Choose an embedding model to turn memories on.`, `error`)
+    return ctx.redirect(`/settings`)
   }
 
   if (args.imageSize != null && tools.imageSizes.includes(args.imageSize) === false) {
@@ -170,6 +206,16 @@ export const POST = async function (ctx) {
     settings.unset(`webSearchOn`)
   }
 
+  if (args.embeddingModel != null) {
+    settings.set(`embeddingModel`, args.embeddingModel)
+  }
+
+  if (args.memoriesOn === true) {
+    settings.set(`memoriesOn`, true)
+  } else {
+    settings.unset(`memoriesOn`)
+  }
+
   if (turnImagesOff) {
     settings.unset(`imageModel`)
   } else if (args.imageModel != null) {
@@ -177,5 +223,14 @@ export const POST = async function (ctx) {
   }
 
   ctx.addFlash(`Settings saved.`, `success`)
+
+  // Only a page in rook: browsers read "//example.com" and "/\example.com" as another site
+  const returnTo = args.returnTo ?? ``
+  const isRookPath = returnTo.startsWith(`/`) && returnTo.startsWith(`//`) === false && returnTo.includes(`\\`) === false
+
+  if (isRookPath) {
+    return ctx.redirect(returnTo)
+  }
+
   return ctx.redirect(`/settings`)
 }

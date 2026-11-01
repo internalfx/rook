@@ -6,10 +6,16 @@ import tools from '../../services/tools.js'
 import runs from '../../services/runs.js'
 import { watchRunResponse } from '../../lib/watchRunResponse.js'
 
+// How many times the model can call each tool per message. Each tool counts on its own, so
+// using up web searches doesn't stop it saving a memory. Calls over the limit are answered as
+// not run, and the model is told why. Every round offers the same tools (changing them would
+// change the prompt).
+const maxCallsPerTool = 10
+
 // How many replies the model gets per message, counting the ones after each round of tool calls.
-// Every round offers the same tools (changing them would change the prompt); tool calls in the
-// last round are answered as not run.
-const maxRounds = 5
+// A safety net for a model that keeps calling tools whatever it's told; tool calls in the last
+// round are answered as not run.
+const maxRounds = 20
 
 // Used when the model can't write a title: the start of the first message
 const fallbackTitle = function (text) {
@@ -157,26 +163,35 @@ const readModelReply = async function ({ upstream, sendEvent, abort }) {
 
 // Runs the tools the model asked for and saves each result. Every call gets a result, even when
 // it isn't run, since the model expects an answer to each call it made. With `skipReason`, no
-// call is run and that's the result of each. Returns true when the user stopped.
-const runToolCalls = async function ({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes, skipReason = null }) {
+// call is run and that's the result of each. `callCounts` holds how many times each tool has been
+// called for this message so far, by name, and is added to. Returns true when the user stopped.
+const runToolCalls = async function ({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes, callCounts, skipReason = null }) {
   for (const call of toolCalls) {
     const name = call.function.name
+    const callCount = (callCounts[name] ?? 0) + 1
+    callCounts[name] = callCount
     const argumentsText = call.function.arguments
     const prompt = tools.readImagePrompt(argumentsText)
     const url = tools.readToolUrl(argumentsText)
     const query = tools.readSearchQuery(argumentsText)
+    const memory = tools.readMemoryContent(argumentsText)
 
-    sendEvent({ type: `toolCall`, toolCallId: call.id, name, prompt, url, query })
+    sendEvent({ type: `toolCall`, toolCallId: call.id, name, prompt, url, query, memory })
 
     let result = null
 
     if (skipReason != null) {
       result = { content: skipReason, imageId: null }
+    } else if (callCount > maxCallsPerTool) {
+      result = {
+        content: `Not run: ${name} can be used at most ${maxCallsPerTool} times for one message. Answer with what you have, or use another tool.`,
+        imageId: null,
+      }
     } else if (abort.signal.aborted === true) {
       result = { content: `The user stopped this before it ran.`, imageId: null }
     } else {
       try {
-        result = await tools.runTool({ name, argumentsText, chatTools, signal: abort.signal })
+        result = await tools.runTool({ name, argumentsText, chatTools, chatId: chat.id, signal: abort.signal })
       } catch (err) {
         result = { content: `The user stopped this before it finished.`, imageId: null }
       }
@@ -207,7 +222,7 @@ const runToolCalls = async function ({ toolCalls, chat, chatTools, history, send
 // services/runs.js), and saves each message as it completes:
 //   { type: "assistant" }                                 a new reply from the model begins
 //   { type: "reasoning" | "content", text }               more of that reply
-//   { type: "toolCall", toolCallId, name, prompt, url, query }  the model asked for a tool
+//   { type: "toolCall", toolCallId, name, prompt, url, query, memory }  the model asked for a tool
 //   { type: "toolResult", toolCallId, content, imageId }  the tool finished
 //   { type: "title", title }                              a new chat's title
 //   { type: "error", message }
@@ -218,6 +233,11 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
   const toolDefinitions = tools.getToolDefinitions(chatTools)
   const abort = run.abort
 
+  // The pinned memories start the conversation the model sees, but aren't saved with it. Taken
+  // once per message, so the start stays the same through every round, even when the model
+  // pins a memory part way.
+  const memoriesMessage = tools.buildMemoriesMessage()
+
   const sendEvent = function (event) {
     runs.emit(run, event)
   }
@@ -225,13 +245,22 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
   // What the model said and drew, for writing the chat's title
   const titleNotes = []
 
+  // How many times the model has called each tool for this message, by name (see maxCallsPerTool)
+  const callCounts = {}
+
   let upstream = null
 
   try {
     for (let round = 1; round <= maxRounds; round += 1) {
       if (upstream == null) {
         try {
-          upstream = await lemonade.streamChat({ model, messages: history, tools: toolDefinitions, signal: abort.signal })
+          let messages = history
+
+          if (memoriesMessage != null) {
+            messages = [memoriesMessage, ...history]
+          }
+
+          upstream = await lemonade.streamChat({ model, messages, tools: toolDefinitions, signal: abort.signal })
         } catch (err) {
           if (abort.signal.aborted === false) {
             console.error(err)
@@ -281,12 +310,12 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
       const isLastRound = round === maxRounds
 
       if (isLastRound) {
-        const skipReason = `Not run: the limit of tool calls for one message was reached.`
-        await runToolCalls({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes, skipReason })
+        const skipReason = `Not run: the limit of replies for one message was reached.`
+        await runToolCalls({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes, callCounts, skipReason })
         break
       }
 
-      const stopped = await runToolCalls({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes })
+      const stopped = await runToolCalls({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes, callCounts })
 
       if (stopped === true) {
         break

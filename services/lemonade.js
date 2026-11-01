@@ -92,6 +92,17 @@ export const listImageModels = async function () {
   return imageModels
 }
 
+// Models that turn text into vectors, for searching memories by meaning
+export const listEmbeddingModels = async function () {
+  const models = await listModels()
+
+  const embeddingModels = models.filter(function (model) {
+    return hasLabel(model, `embeddings`)
+  })
+
+  return embeddingModels
+}
+
 // Starts a streamed chat completion and returns the upstream Response, whose body is a
 // server-sent event stream of "data: {...}" lines ending with "data: [DONE]".
 // Lemonade has slowRequestLimit to start replying, which covers loading the model; once the
@@ -234,12 +245,53 @@ export const generateImage = async function ({ model, prompt, size = null, seed,
   return pngBuffer
 }
 
+// Each of `inputs` (strings) as a vector, an array of numbers, in the same order. Loading the
+// model can take a while the first time, so the limit is slowRequestLimit; pass `signal` to cancel.
+export const embed = async function ({ model, inputs, signal }) {
+  const url = `${config.lemonade.host}/api/v1/embeddings`
+
+  const payload = {
+    model,
+    input: inputs,
+  }
+
+  const response = await fetch(url, {
+    method: `POST`,
+    headers: getHeaders(),
+    body: JSON.stringify(payload),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(slowRequestLimit)]),
+    timeout: false,
+  })
+
+  if (response.ok === false) {
+    throw await failure(`embeddings`, response)
+  }
+
+  const body = await response.json()
+  const items = body.data ?? []
+
+  if (items.length !== inputs.length) {
+    throw new Error(`Lemonade embeddings gave ${items.length} vectors for ${inputs.length} texts`)
+  }
+
+  // Each item says which input it's for; put them back in that order
+  const vectors = []
+
+  for (const item of items) {
+    vectors[item.index] = item.embedding
+  }
+
+  return vectors
+}
+
 export default {
   listModels,
   hasLabel,
   listChatModels,
   listImageModels,
+  listEmbeddingModels,
   streamChat,
   writeTitle,
   generateImage,
+  embed,
 }

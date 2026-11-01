@@ -5,6 +5,7 @@ import images from './images.js'
 import settings from './settings.js'
 import webReader from './webReader.js'
 import webSearch from './webSearch.js'
+import memories from './memories.js'
 import { extrasFor, matchDomain } from './sites.js'
 
 // Tools the chat model can call, as OpenAI-style function definitions. Every chat has the tools
@@ -110,11 +111,125 @@ const buildWebSearchTool = function () {
   return isWebSearchOn() ? webSearchTool : null
 }
 
+// The model memories are searched with; they can't be searched without one
+export const getEmbeddingModel = function () {
+  return settings.get(`embeddingModel`)
+}
+
+// Off until switched on in Settings, which needs an embedding model chosen
+export const isMemoriesOn = function () {
+  return settings.get(`memoriesOn`) === true && getEmbeddingModel() != null
+}
+
+const pinnedDescription = `true only for things that matter in almost every conversation, like the user's name or how they like answers written; those are given to you at the start of every chat. false for everything else, which you find with search_memories when it's relevant.`
+
+const saveMemoryTool = {
+  type: `function`,
+  function: {
+    name: `save_memory`,
+    description: `Save a memory: something about the user, or something they asked you to remember, kept for every future chat. Save one when the user tells you something worth knowing later (their name, family, pets, work, likes, plans) or asks you to remember something. If you already have a memory about it, change that one with update_memory instead of saving another.`,
+    parameters: {
+      type: `object`,
+      properties: {
+        content: {
+          type: `string`,
+          description: `The memory as one short sentence that makes sense on its own, e.g. "The user's dog is called Biscuit."`,
+        },
+        pinned: {
+          type: `boolean`,
+          description: pinnedDescription,
+        },
+      },
+      required: [`content`, `pinned`],
+    },
+  },
+}
+
+const searchMemoriesTool = {
+  type: `function`,
+  function: {
+    name: `search_memories`,
+    description: `Search your saved memories by meaning, for things the user told you in earlier chats. Use it whenever the user mentions something you might have been told before, or asks what you remember, before saying you don't know. Pinned memories aren't searched; they're already given to you at the start of the chat.`,
+    parameters: {
+      type: `object`,
+      properties: {
+        query: {
+          type: `string`,
+          description: `What to look for, in a few words, e.g. "the user's dog".`,
+        },
+      },
+      required: [`query`],
+    },
+  },
+}
+
+const updateMemoryTool = {
+  type: `function`,
+  function: {
+    name: `update_memory`,
+    description: `Change a saved memory, when the user corrects it or it's out of date. Give its id (from search_memories, or the pinned list at the start of the chat) and whatever changes.`,
+    parameters: {
+      type: `object`,
+      properties: {
+        id: {
+          type: `string`,
+          description: `The memory's id.`,
+        },
+        content: {
+          type: `string`,
+          description: `The memory's new text, as one short sentence. Leave it out to keep the text.`,
+        },
+        pinned: {
+          type: `boolean`,
+          description: `${pinnedDescription} Leave it out to keep it as it is.`,
+        },
+      },
+      required: [`id`],
+    },
+  },
+}
+
+const deleteMemoryTool = {
+  type: `function`,
+  function: {
+    name: `delete_memory`,
+    description: `Delete a saved memory, when the user asks you to forget it or it's no longer true. Give its id (from search_memories, or the pinned list at the start of the chat).`,
+    parameters: {
+      type: `object`,
+      properties: {
+        id: {
+          type: `string`,
+          description: `The memory's id.`,
+        },
+      },
+      required: [`id`],
+    },
+  },
+}
+
+// Models only know the date their training ended, so they're given a way to ask
+const currentTimeTool = {
+  type: `function`,
+  function: {
+    name: `get_current_time`,
+    description: `Get the current date, time and time zone. Use it whenever the answer depends on today's date or the time: "today", "tomorrow" or "this week", how long until or since something, someone's age, or whether something has happened yet.`,
+    parameters: {
+      type: `object`,
+      properties: {},
+    },
+  },
+}
+
 // Each tool's definition, from its settings in a chat, or null when it can't be offered right now
 const definitionsByName = {
+  get_current_time: () => currentTimeTool,
   generate_image: () => generateImageTool,
   read_web_page: buildReadWebPageTool,
   web_search: buildWebSearchTool,
+  save_memory: () => saveMemoryTool,
+  search_memories: () => searchMemoriesTool,
+  update_memory: () => updateMemoryTool,
+  delete_memory: () => deleteMemoryTool,
 }
 
 // The longest page read_web_page hands the chat model
@@ -130,6 +245,9 @@ export const defaultImageSize = `512x512`
 export const getChatTools = function () {
   const chatTools = {}
 
+  // Always offered; it has nothing to set up
+  chatTools.get_current_time = {}
+
   const imageModel = settings.get(`imageModel`)
 
   if (imageModel != null) {
@@ -143,7 +261,36 @@ export const getChatTools = function () {
   // Offered only while switched on in Settings (see buildWebSearchTool)
   chatTools.web_search = {}
 
+  if (isMemoriesOn()) {
+    chatTools.save_memory = {}
+    chatTools.search_memories = { embeddingModel: getEmbeddingModel() }
+    chatTools.update_memory = {}
+    chatTools.delete_memory = {}
+  }
+
   return chatTools
+}
+
+// The system message that starts every chat while memories are on: the pinned memories, with
+// their ids so the model can change them. Null when there's nothing to send.
+export const buildMemoriesMessage = function () {
+  if (isMemoriesOn() === false) {
+    return null
+  }
+
+  const pinned = memories.listPinned()
+
+  if (pinned.length === 0) {
+    return null
+  }
+
+  const lines = pinned.map(function (memory) {
+    return `- [${memory.id}] ${memory.content}`
+  })
+
+  const content = `Things you remember about the user (your pinned memories; the id in brackets is for update_memory and delete_memory):\n${lines.join(`\n`)}`
+
+  return { role: `system`, content }
 }
 
 // The definitions to offer the model for a chat's tools
@@ -162,14 +309,19 @@ export const getToolDefinitions = function (chatTools) {
   return definitions
 }
 
-// One of the arguments the model gave a tool, or null when the arguments aren't valid JSON yet
-const readArgument = function (argumentsText, key) {
+// The arguments the model gave a tool, as an object, or null when they aren't valid JSON yet
+const parseArguments = function (argumentsText) {
   try {
-    const args = JSON.parse(argumentsText)
-    return args[key] ?? null
+    return JSON.parse(argumentsText)
   } catch (err) {
     return null
   }
+}
+
+// One of the arguments the model gave a tool, or null when the arguments aren't valid JSON yet
+const readArgument = function (argumentsText, key) {
+  const args = parseArguments(argumentsText)
+  return args?.[key] ?? null
 }
 
 // The prompt the model gave generate_image
@@ -182,9 +334,102 @@ export const readToolUrl = function (argumentsText) {
   return readArgument(argumentsText, `url`)
 }
 
-// The query the model gave web_search
+// The query the model gave web_search or search_memories
 export const readSearchQuery = function (argumentsText) {
   return readArgument(argumentsText, `query`)
+}
+
+// The text the model gave save_memory or update_memory
+export const readMemoryContent = function (argumentsText) {
+  return readArgument(argumentsText, `content`)
+}
+
+const describeKind = function (pinned) {
+  return pinned ? `pinned: given to you in every chat` : `searchable`
+}
+
+// In the server's time zone, which is the owner's, written out so the model can't misread it,
+// with the ISO form for working things out
+const runGetCurrentTime = function () {
+  const now = new Date()
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const localTime = now.toLocaleString(`en-US`, { dateStyle: `full`, timeStyle: `long`, timeZone })
+
+  return { content: `It's ${localTime} (time zone ${timeZone}). In UTC: ${now.toISOString()}`, imageId: null }
+}
+
+const runSaveMemory = function ({ argumentsText, chatId }) {
+  const args = parseArguments(argumentsText) ?? {}
+  const content = typeof args.content === `string` ? args.content.trim() : ``
+
+  if (content === ``) {
+    return { content: `Saving the memory failed: no content was given.`, imageId: null }
+  }
+
+  const memory = memories.createMemory({ content, pinned: args.pinned === true, chatId })
+
+  return { content: `Saved memory [${memory.id}] (${describeKind(memory.pinned)}).`, imageId: null }
+}
+
+const runSearchMemories = async function ({ argumentsText, toolSettings, signal }) {
+  const query = readSearchQuery(argumentsText)
+
+  if (query == null || query.trim() === ``) {
+    return { content: `The search failed: no query was given.`, imageId: null }
+  }
+
+  const results = await memories.search({ query: query.trim(), model: toolSettings.embeddingModel, signal })
+
+  if (results.length === 0) {
+    return { content: `There are no searchable memories saved yet.`, imageId: null }
+  }
+
+  const lines = results.map(function (memory, index) {
+    return `${index + 1}. [${memory.id}] ${memory.content} (saved ${memory.createdAt.slice(0, 10)})`
+  })
+
+  return {
+    content: `The memories closest to "${query.trim()}", closest first. Ignore any that aren't about it.\n\n${lines.join(`\n`)}`,
+    imageId: null,
+  }
+}
+
+const runUpdateMemory = function ({ argumentsText }) {
+  const args = parseArguments(argumentsText) ?? {}
+  const memory = typeof args.id === `string` ? memories.getMemory(args.id.trim()) : null
+
+  if (memory == null) {
+    return { content: `There's no memory with the id "${args.id}".`, imageId: null }
+  }
+
+  // Whatever the model leaves out stays as it is
+  let content = memory.content
+  let pinned = memory.pinned
+
+  if (typeof args.content === `string` && args.content.trim() !== ``) {
+    content = args.content.trim()
+  }
+
+  if (typeof args.pinned === `boolean`) {
+    pinned = args.pinned
+  }
+
+  const updated = memories.updateMemory(memory.id, { content, pinned })
+
+  return { content: `Updated memory [${updated.id}] (${describeKind(updated.pinned)}): ${updated.content}`, imageId: null }
+}
+
+const runDeleteMemory = function ({ argumentsText }) {
+  const args = parseArguments(argumentsText) ?? {}
+  const memory = typeof args.id === `string` ? memories.getMemory(args.id.trim()) : null
+
+  if (memory == null) {
+    return { content: `There's no memory with the id "${args.id}".`, imageId: null }
+  }
+
+  memories.deleteMemory(memory.id)
+
+  return { content: `Deleted memory [${memory.id}]: ${memory.content}`, imageId: null }
 }
 
 const runGenerateImage = async function ({ argumentsText, toolSettings, signal }) {
@@ -272,7 +517,8 @@ const runWebSearch = async function ({ argumentsText, signal }) {
 // Runs one tool call and returns { content, imageId }. `content` is what the model is told
 // about the result. Failures are reported to the model as text rather than thrown, so it can
 // explain them to the user; a stopped call still throws, so the caller can tell it was stopped.
-export const runTool = async function ({ name, argumentsText, chatTools, signal }) {
+// `chatId` is the chat the call was made in.
+export const runTool = async function ({ name, argumentsText, chatTools, chatId, signal }) {
   const toolSettings = chatTools[name]
 
   // Only these tools are offered, so this catches a model inventing a name, or calling a tool
@@ -282,6 +528,11 @@ export const runTool = async function ({ name, argumentsText, chatTools, signal 
   }
 
   try {
+    if (name === `get_current_time`) {
+      const result = runGetCurrentTime()
+      return result
+    }
+
     if (name === `generate_image`) {
       const result = await runGenerateImage({ argumentsText, toolSettings, signal })
       return result
@@ -294,6 +545,26 @@ export const runTool = async function ({ name, argumentsText, chatTools, signal 
 
     if (name === `web_search`) {
       const result = await runWebSearch({ argumentsText, signal })
+      return result
+    }
+
+    if (name === `save_memory`) {
+      const result = runSaveMemory({ argumentsText, chatId })
+      return result
+    }
+
+    if (name === `search_memories`) {
+      const result = await runSearchMemories({ argumentsText, toolSettings, signal })
+      return result
+    }
+
+    if (name === `update_memory`) {
+      const result = runUpdateMemory({ argumentsText })
+      return result
+    }
+
+    if (name === `delete_memory`) {
+      const result = runDeleteMemory({ argumentsText })
       return result
     }
 
@@ -317,8 +588,12 @@ export default {
   isWebPagesOn,
   getReadableDomains,
   isWebSearchOn,
+  getEmbeddingModel,
+  isMemoriesOn,
+  buildMemoriesMessage,
   readImagePrompt,
   readToolUrl,
   readSearchQuery,
+  readMemoryContent,
   runTool,
 }
