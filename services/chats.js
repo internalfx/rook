@@ -3,11 +3,11 @@ import cuid from 'cuid'
 import db from './db.js'
 import images from './images.js'
 
-const selectChats = db.query(`SELECT id, title, model, updatedAt FROM chats ORDER BY updatedAt DESC`)
+const selectChats = db.query(`SELECT id, title, updatedAt FROM chats ORDER BY updatedAt DESC`)
 const selectChat = db.query(`SELECT * FROM chats WHERE id = $id`)
 const insertChat = db.query(`
-  INSERT INTO chats (id, title, model, tools, createdAt, updatedAt)
-  VALUES ($id, NULL, $model, $tools, $now, $now)
+  INSERT INTO chats (id, title, createdAt, updatedAt)
+  VALUES ($id, NULL, $now, $now)
 `)
 const updateChatActivity = db.query(`UPDATE chats SET updatedAt = $now WHERE id = $id`)
 const updateChatTitle = db.query(`UPDATE chats SET title = $title WHERE id = $id`)
@@ -29,17 +29,8 @@ export const listChats = function () {
   return selectChats.all()
 }
 
-// tools comes back parsed: an object keyed by tool name, e.g. { generate_image: { model } }
 export const getChat = function (id) {
-  const row = selectChat.get({ id })
-
-  if (row == null) {
-    return null
-  }
-
-  const tools = JSON.parse(row.tools)
-
-  return { ...row, tools }
+  return selectChat.get({ id }) ?? null
 }
 
 // toolCalls comes back parsed: an array in the OpenAI format, or null
@@ -59,13 +50,12 @@ export const getMessages = function (chatId) {
   return messages
 }
 
-// The model and tools are fixed for the chat's whole life (see migrations/004-chat-config.sql)
-export const createChat = function ({ model, tools }) {
+// A chat holds only its conversation; its models and tools come from Settings each time
+export const createChat = function () {
   const id = cuid()
   const now = new Date().toISOString()
-  const toolsText = JSON.stringify(tools)
 
-  insertChat.run({ id, model, tools: toolsText, now })
+  insertChat.run({ id, now })
 
   return getChat(id)
 }

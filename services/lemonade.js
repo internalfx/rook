@@ -19,6 +19,28 @@ const getHeaders = function () {
   }
 }
 
+// A failed response => an error with Lemonade's own message, which is shown to the user. Lemonade
+// answers with { error: { message } } as JSON; anything else is used as it is.
+const failure = async function (what, response) {
+  const errorText = await response.text()
+  let message = errorText.trim()
+
+  try {
+    const body = JSON.parse(errorText)
+    const errorMessage = body.error?.message ?? body.error
+
+    if (typeof errorMessage === `string` && errorMessage !== ``) {
+      message = errorMessage
+    }
+  } catch (err) {}
+
+  if (message === ``) {
+    message = `${response.status} ${response.statusText}`
+  }
+
+  return new Error(`Lemonade ${what} failed: ${message}`)
+}
+
 const request = async function (method, apiPath) {
   const url = `${config.lemonade.host}/api/v1${apiPath}`
 
@@ -109,8 +131,7 @@ export const streamChat = async function ({ model, messages, tools = [], signal 
   }
 
   if (response.ok === false) {
-    const errorText = await response.text()
-    throw new Error(`Lemonade chat failed: ${response.status} ${errorText}`)
+    throw await failure(`chat`, response)
   }
 
   return response
@@ -150,8 +171,7 @@ export const writeTitle = async function ({ model, userText, replyText }) {
   })
 
   if (response.ok === false) {
-    const errorText = await response.text()
-    throw new Error(`Lemonade title failed: ${response.status} ${errorText}`)
+    throw await failure(`title`, response)
   }
 
   const body = await response.json()
@@ -199,8 +219,7 @@ export const generateImage = async function ({ model, prompt, size = null, seed,
   })
 
   if (response.ok === false) {
-    const errorText = await response.text()
-    throw new Error(`Lemonade image failed: ${response.status} ${errorText}`)
+    throw await failure(`image`, response)
   }
 
   const body = await response.json()

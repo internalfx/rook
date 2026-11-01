@@ -46,6 +46,14 @@ table tr td {
   -webkit-mask: url(/static/icons/mdi--cog-outline.svg) center / contain no-repeat;
   mask: url(/static/icons/mdi--cog-outline.svg) center / contain no-repeat;
 }
+.icon-web {
+  -webkit-mask: url(/static/icons/mdi--web.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--web.svg) center / contain no-repeat;
+}
+.icon-search {
+  -webkit-mask: url(/static/icons/mdi--magnify.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--magnify.svg) center / contain no-repeat;
+}
 .icon-loading {
   -webkit-mask: url(/static/icons/line-md--loading-twotone-loop.svg) center / contain no-repeat;
   mask: url(/static/icons/line-md--loading-twotone-loop.svg) center / contain no-repeat;
@@ -57,4 +65,113 @@ table tr td {
   html[data-sidebar="closed"] #sidebar {
     display: none;
   }
+}
+
+/* A chat reply's Markdown, drawn as HTML (see renderMarkdown in templates/chat/index.njk).
+   Tailwind's reset strips the browser's own styles, so each element gets them back here,
+   sized for the chat bubble. */
+.markdown > * + * {
+  margin-top: 0.75em;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-weight: 700;
+  line-height: 1.3;
+}
+.markdown * + :is(h1, h2, h3, h4, h5, h6) {
+  margin-top: 1.25em;
+}
+.markdown h1 {
+  font-size: 1.375em;
+}
+.markdown h2 {
+  font-size: 1.25em;
+}
+.markdown h3 {
+  font-size: 1.125em;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 1.5em;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown ul ul {
+  list-style: circle;
+}
+.markdown li + li,
+.markdown li > ul,
+.markdown li > ol {
+  margin-top: 0.25em;
+}
+.markdown a {
+  color: var(--color-sky-700);
+  text-decoration: underline;
+}
+.markdown a:hover {
+  color: var(--color-sky-900);
+}
+.markdown strong {
+  font-weight: 700;
+}
+.markdown em {
+  font-style: italic;
+}
+.markdown code {
+  padding: 0.1em 0.3em;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  border-radius: 0.25rem;
+  background: var(--color-gray-100);
+}
+.markdown pre {
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background: var(--color-gray-800);
+  color: var(--color-gray-100);
+  line-height: 1.5;
+}
+.markdown pre code {
+  padding: 0;
+  font-size: 0.85em;
+  background: none;
+  white-space: pre;
+}
+.markdown blockquote {
+  padding-left: 0.75em;
+  border-left: 3px solid var(--color-gray-300);
+  color: var(--color-gray-600);
+}
+.markdown hr {
+  border-color: var(--color-gray-200);
+}
+/* A wide table scrolls inside the bubble instead of stretching it */
+.markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+}
+.markdown th,
+.markdown td {
+  padding: 0.25em 0.75em;
+  border: 1px solid var(--color-gray-200);
+  text-align: left;
+  vertical-align: top;
+}
+.markdown th {
+  font-weight: 700;
+  background: var(--color-gray-50);
+}
+.markdown img {
+  max-width: 100%;
 }

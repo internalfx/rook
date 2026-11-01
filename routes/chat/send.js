@@ -1,18 +1,15 @@
-
-import { PassThrough } from 'node:stream'
 import joi from '../../services/joi.js'
 import lemonade from '../../services/lemonade.js'
 import chats from '../../services/chats.js'
 import settings from '../../services/settings.js'
 import tools from '../../services/tools.js'
+import runs from '../../services/runs.js'
+import { watchRunResponse } from '../../lib/watchRunResponse.js'
 
 // How many replies the model gets per message, counting the ones after each round of tool calls.
 // Every round offers the same tools (changing them would change the prompt); tool calls in the
 // last round are answered as not run.
 const maxRounds = 5
-
-// How often to send the browser a keep-alive line while nothing else is being sent
-const keepAliveInterval = 1000 * 15
 
 // Used when the model can't write a title: the start of the first message
 const fallbackTitle = function (text) {
@@ -161,13 +158,15 @@ const readModelReply = async function ({ upstream, sendEvent, abort }) {
 // Runs the tools the model asked for and saves each result. Every call gets a result, even when
 // it isn't run, since the model expects an answer to each call it made. With `skipReason`, no
 // call is run and that's the result of each. Returns true when the user stopped.
-const runToolCalls = async function ({ toolCalls, chat, history, sendEvent, abort, titleNotes, skipReason = null }) {
+const runToolCalls = async function ({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes, skipReason = null }) {
   for (const call of toolCalls) {
     const name = call.function.name
     const argumentsText = call.function.arguments
     const prompt = tools.readImagePrompt(argumentsText)
+    const url = tools.readToolUrl(argumentsText)
+    const query = tools.readSearchQuery(argumentsText)
 
-    sendEvent({ type: `toolCall`, toolCallId: call.id, name, prompt })
+    sendEvent({ type: `toolCall`, toolCallId: call.id, name, prompt, url, query })
 
     let result = null
 
@@ -177,7 +176,7 @@ const runToolCalls = async function ({ toolCalls, chat, history, sendEvent, abor
       result = { content: `The user stopped this before it ran.`, imageId: null }
     } else {
       try {
-        result = await tools.runTool({ name, argumentsText, chatTools: chat.tools, signal: abort.signal })
+        result = await tools.runTool({ name, argumentsText, chatTools, signal: abort.signal })
       } catch (err) {
         result = { content: `The user stopped this before it finished.`, imageId: null }
       }
@@ -204,39 +203,29 @@ const runToolCalls = async function ({ toolCalls, chat, history, sendEvent, abor
   return abort.signal.aborted === true
 }
 
-// Streams the model's replies to the browser as rook's own events, one JSON object per
-// "data:" line, and saves each message as it completes:
+// Runs the model's replies as rook's own events, sent through `run` to whoever is watching (see
+// services/runs.js), and saves each message as it completes:
 //   { type: "assistant" }                                 a new reply from the model begins
 //   { type: "reasoning" | "content", text }               more of that reply
-//   { type: "toolCall", toolCallId, name, prompt }        the model asked for a tool
+//   { type: "toolCall", toolCallId, name, prompt, url, query }  the model asked for a tool
 //   { type: "toolResult", toolCallId, content, imageId }  the tool finished
 //   { type: "title", title }                              a new chat's title
 //   { type: "error", message }
 // After tool calls the model is asked again, so it can answer with the results in hand.
-// The chat's own model and tools are used throughout.
-const runConversation = async function ({ firstUpstream, history, chat, userText, output, abort }) {
-  const model = chat.model
-  const toolDefinitions = tools.getToolDefinitions(chat.tools)
+// The model and tools are Settings' as the message was sent, kept for the whole reply. It runs
+// on its own, whether or not a browser is watching, until it finishes or the run is stopped.
+const runConversation = async function ({ history, chat, model, chatTools, userText, run }) {
+  const toolDefinitions = tools.getToolDefinitions(chatTools)
+  const abort = run.abort
 
   const sendEvent = function (event) {
-    if (output.writable) {
-      output.write(`data: ${JSON.stringify(event)}\n\n`)
-    }
+    runs.emit(run, event)
   }
 
   // What the model said and drew, for writing the chat's title
   const titleNotes = []
 
-  // Nothing is sent while a tool runs, which can be minutes for a slow image model, and an idle
-  // connection may be dropped (which would stop the tool). A comment line (": ...") keeps it
-  // active; the browser only reads "data:" lines, so it ignores these.
-  const keepAlive = setInterval(function () {
-    if (output.writable) {
-      output.write(`: keep-alive\n\n`)
-    }
-  }, keepAliveInterval)
-
-  let upstream = firstUpstream
+  let upstream = null
 
   try {
     for (let round = 1; round <= maxRounds; round += 1) {
@@ -293,11 +282,11 @@ const runConversation = async function ({ firstUpstream, history, chat, userText
 
       if (isLastRound) {
         const skipReason = `Not run: the limit of tool calls for one message was reached.`
-        await runToolCalls({ toolCalls, chat, history, sendEvent, abort, titleNotes, skipReason })
+        await runToolCalls({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes, skipReason })
         break
       }
 
-      const stopped = await runToolCalls({ toolCalls, chat, history, sendEvent, abort, titleNotes })
+      const stopped = await runToolCalls({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes })
 
       if (stopped === true) {
         break
@@ -317,14 +306,14 @@ const runConversation = async function ({ firstUpstream, history, chat, userText
     console.error(`Chat conversation failed`, err)
     sendEvent({ type: `error`, message: err.message })
   } finally {
-    clearInterval(keepAlive)
-    output.end()
+    runs.finishRun(run)
   }
 }
 
-// Sends one message in a chat and streams the reply back (see runConversation). Without a
-// chatId, a new chat is created; its id is returned in the X-Chat-Id header. The history comes
-// from the database, and the Lemonade API key never leaves the server.
+// Sends one message in a chat, starts the reply running on the server (see runConversation)
+// and streams it back. Without a chatId, a new chat is created; its id is returned in the
+// X-Chat-Id header. The history comes from the database, and the Lemonade API key never leaves
+// the server.
 export const POST = async function (ctx) {
   let args
 
@@ -337,29 +326,27 @@ export const POST = async function (ctx) {
     ctx.throw(400, err.message)
   }
 
+  // Every chat uses the models and tools in Settings as they are now
+  const model = settings.get(`chatModel`)
+  const chatTools = tools.getChatTools()
+
+  if (model == null) {
+    ctx.throw(400, `Choose a chat model in Settings first.`)
+  }
+
   let chat = null
-  let model = null
-  let chatTools = null
   let history = []
 
-  // A chat keeps the model and tools it was created with, so its prompt never changes under it;
-  // Settings only decide what a new chat starts with
-  if (args.chatId == null) {
-    model = settings.get(`chatModel`)
-    chatTools = tools.toolsFromSettings()
-
-    if (model == null) {
-      ctx.throw(400, `Choose a chat model in Settings first.`)
-    }
-  } else {
+  if (args.chatId != null) {
     chat = chats.getChat(args.chatId)
 
     if (chat == null) {
       ctx.throw(404, `That chat no longer exists.`)
     }
 
-    model = chat.model
-    chatTools = chat.tools
+    if (runs.getRun(chat.id) != null) {
+      ctx.throw(409, `This chat is still replying.`)
+    }
 
     const savedMessages = chats.getMessages(chat.id)
     history = savedMessages.map(toModelMessage)
@@ -367,40 +354,18 @@ export const POST = async function (ctx) {
 
   history.push({ role: `user`, content: args.content })
 
-  // Stop generating if the browser goes away (Stop button, closed tab, navigation)
-  const abort = new AbortController()
-
-  ctx.res.on(`close`, function () {
-    const finishedNormally = ctx.res.writableFinished === true
-
-    if (finishedNormally === false) {
-      abort.abort()
-    }
-  })
-
-  // Throws before anything is saved if Lemonade refuses the request
-  const firstUpstream = await lemonade.streamChat({
-    model,
-    messages: history,
-    tools: tools.getToolDefinitions(chatTools),
-    signal: abort.signal,
-  })
-
   if (chat == null) {
-    chat = chats.createChat({ model, tools: chatTools })
+    chat = chats.createChat()
   }
 
   chats.addMessage({ chatId: chat.id, role: `user`, content: args.content })
   chats.touchChat(chat.id)
 
-  // Koa pipes a web ReadableStream body without an error handler, so an aborted or failed
-  // upstream would crash the process. runConversation writes into this stream instead.
-  const output = new PassThrough()
+  // Everything up to and including this message is saved; the run's events draw the rest
+  const run = runs.startRun({ chatId: chat.id, baseCount: history.length })
 
-  runConversation({ firstUpstream, history, chat, userText: args.content, output, abort })
+  runConversation({ history, chat, model, chatTools, userText: args.content, run })
 
   ctx.set(`X-Chat-Id`, chat.id)
-  ctx.set(`Content-Type`, `text/event-stream`)
-  ctx.set(`Cache-Control`, `no-cache`)
-  ctx.body = output
+  watchRunResponse(ctx, run)
 }

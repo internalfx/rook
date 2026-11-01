@@ -1,7 +1,5 @@
 {% extends 'layouts/default' %}
 
-{% block title %}Settings · {{ config.appName }}{% endblock %}
-
 {% block body %}
   {# One choice per model: its name, labels, size and context length #}
   {% macro modelOption(name, model, current) %}
@@ -21,8 +19,20 @@
     </label>
   {% endmacro %}
 
+  {# An on/off switch: a checkbox, sent as "true" when on and left out of the form when off.
+     `xModel` names an Alpine variable to keep in step with it, for parts that dim when it's off. #}
+  {% macro toggleSwitch(name, label, on, xModel) %}
+    <label class="relative inline-flex shrink-0 items-center cursor-pointer">
+      <input type="checkbox" name="{{ name }}" value="true" class="peer sr-only"
+        {% if xModel %}x-model="{{ xModel }}"{% endif %} {% if on %}checked{% endif %}>
+      <span class="sr-only">{{ label }}</span>
+      <span class="h-6 w-11 rounded-full bg-gray-300 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500 peer-focus-visible:ring-offset-2" aria-hidden="true"></span>
+      <span class="absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" aria-hidden="true"></span>
+    </label>
+  {% endmacro %}
+
   <h1 class="text-2xl font-bold">Settings</h1>
-  <p class="mt-1 mb-6 text-sm text-gray-500">Changes apply to new chats. Existing chats keep the models and tools they started with.</p>
+  <p class="mt-1 mb-6 text-sm text-gray-500">Changes apply to every chat right away, including chats already open, from their next message.</p>
 
   {% if modelsError %}
     <div class="max-w-3xl p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
@@ -93,6 +103,36 @@
               <span class="text-xs text-gray-500">{{ option.dimensions }}</span>
             </label>
           {% endfor %}
+        </div>
+      </fieldset>
+
+      {# Switched off, the sites stay listed (and are still sent with the form) for next time #}
+      <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ webPagesOn: {{ 'true' if isWebPagesOn else 'false' }} }">
+        <div class="flex items-start gap-4 px-4 py-3 border-b border-gray-200">
+          <div class="flex-1 min-w-0">
+            <legend class="font-bold">Web pages</legend>
+            <p class="mt-0.5 text-xs text-gray-500">Lets the chat model read pages on these sites when you ask about them.</p>
+          </div>
+
+          {{ toggleSwitch('webPagesOn', 'Read web pages', isWebPagesOn, 'webPagesOn') }}
+        </div>
+
+        <div class="px-4 py-3 transition-opacity" :class="{ 'opacity-50': !webPagesOn }">
+          <label for="webDomains" class="block text-sm font-medium">Sites</label>
+          <p class="mt-0.5 mb-2 text-xs text-gray-500">One site per line. Each covers its subdomains too: github.com includes www.github.com. Leave it empty to turn web pages off.</p>
+          <textarea id="webDomains" name="webDomains" rows="4" placeholder="github.com" spellcheck="false" autocapitalize="off"
+            class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">{{ webDomainsText }}</textarea>
+        </div>
+      </fieldset>
+
+      <fieldset class="bg-white rounded-lg shadow-sm">
+        <div class="flex items-start gap-4 px-4 py-3">
+          <div class="flex-1 min-w-0">
+            <legend class="font-bold">Web search</legend>
+            <p class="mt-0.5 text-xs text-gray-500">Lets the chat model search the web with DuckDuckGo, so the searches it makes for your questions are sent there. It can only open results on the sites listed under Web pages; for the rest it gets their titles and snippets.</p>
+          </div>
+
+          {{ toggleSwitch('webSearchOn', 'Search the web', isWebSearchOn) }}
         </div>
       </fieldset>
 

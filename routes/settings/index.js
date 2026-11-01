@@ -3,6 +3,7 @@ import joi from '../../services/joi.js'
 import lemonade from '../../services/lemonade.js'
 import settings from '../../services/settings.js'
 import tools from '../../services/tools.js'
+import { parseDomains } from '../../services/sites.js'
 import { formatContextLength } from '../../lib/format.js'
 
 // Value of the "Off" choice for the image model
@@ -62,6 +63,10 @@ export const GET = async function (ctx) {
   const chatModel = settings.get(`chatModel`)
   const imageModel = settings.get(`imageModel`)
   const imageSize = settings.get(`imageSize`) ?? tools.defaultImageSize
+  // The text box shows one site per line
+  const webDomainsText = tools.getWebDomains().join(`\n`)
+  const isWebPagesOn = tools.isWebPagesOn()
+  const isWebSearchOn = tools.isWebSearchOn()
 
   ctx.body = ctx.nunjucks(`settings/index`, {
     modelsError,
@@ -74,6 +79,9 @@ export const GET = async function (ctx) {
     noImageModel,
     isChatModelListed: isListed(chatModels, chatModel),
     isImageModelListed: isListed(imageModels, imageModel),
+    webDomainsText,
+    isWebPagesOn,
+    isWebSearchOn,
   })
 }
 
@@ -85,6 +93,12 @@ export const POST = async function (ctx) {
       chatModel: joi.string().trim(),
       imageModel: joi.string().trim(),
       imageSize: joi.string().trim(),
+      // One site per line. An empty box arrives as null (see services/joi.js) and turns web
+      // pages off.
+      webDomains: joi.string(),
+      // The switch is a checkbox, which a form leaves out when it's off
+      webPagesOn: joi.boolean(),
+      webSearchOn: joi.boolean(),
     }).validateAsync(ctx.request.body)
   } catch (err) {
     ctx.addFlash(err.message, `error`)
@@ -123,12 +137,37 @@ export const POST = async function (ctx) {
     return ctx.redirect(`/settings`)
   }
 
+  const { domains: webDomains, invalid: invalidSites } = parseDomains(args.webDomains ?? ``)
+
+  if (invalidSites.length > 0) {
+    ctx.addFlash(`These aren't sites: ${invalidSites.join(`, `)}. Put one site per line, like github.com.`, `error`)
+    return ctx.redirect(`/settings`)
+  }
+
   if (args.chatModel != null) {
     settings.set(`chatModel`, args.chatModel)
   }
 
   if (args.imageSize != null) {
     settings.set(`imageSize`, args.imageSize)
+  }
+
+  if (webDomains.length > 0) {
+    settings.set(`webDomains`, webDomains)
+  } else {
+    settings.unset(`webDomains`)
+  }
+
+  if (args.webPagesOn === true) {
+    settings.unset(`webPagesOff`)
+  } else {
+    settings.set(`webPagesOff`, true)
+  }
+
+  if (args.webSearchOn === true) {
+    settings.set(`webSearchOn`, true)
+  } else {
+    settings.unset(`webSearchOn`)
   }
 
   if (turnImagesOff) {

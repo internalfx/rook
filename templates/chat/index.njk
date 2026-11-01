@@ -1,17 +1,26 @@
 {% extends 'layouts/default' %}
 
-{% block title %}{{ chat.title if chat and chat.title else 'Chat' }} · {{ config.appName }}{% endblock %}
-
 {% block mainClass %}relative flex overflow-hidden{% endblock %}
 
 {% block head %}
+<script src="/static/marked.min.js"></script>
+<script src="/static/purify.min.js"></script>
 <script>
+  // Links in replies open in a new tab, so following one doesn't leave the chat
+  DOMPurify.addHook(`afterSanitizeAttributes`, function (node) {
+    if (node.tagName === `A`) {
+      node.setAttribute(`target`, `_blank`)
+      node.setAttribute(`rel`, `noopener noreferrer`)
+    }
+  })
+
   document.addEventListener(`alpine:init`, () => {
-    const appName = {{ config.appName | dump | safe }}
     // False when no usable chat model is chosen in Settings
     const canSend = {{ 'true' if modelProblem == null else 'false' }}
 
     Alpine.data(`chat`, () => ({
+      // Exposed so the Send button's :disabled expression can read it
+      canSend,
       chatId: null,
       chats: [],
       messages: [],
@@ -34,6 +43,16 @@
 
         this.scrollToBottom()
         this.$refs.input.focus()
+
+        // A reply was still running when the page was opened; pick it up where it's got to
+        if (data.running === true) {
+          this.resume()
+        }
+
+        // Also runs when send() clears the input, so the box shrinks back
+        this.$watch(`input`, () => {
+          this.$nextTick(() => this.resizeInput())
+        })
       },
 
       get chatTitle () {
@@ -56,10 +75,6 @@
         if (item != null) {
           item.title = title
         }
-
-        if (id === this.chatId) {
-          document.title = `${title} · ${appName}`
-        }
       },
 
       // Moves a chat to the top of the list, adding it if it's new
@@ -76,26 +91,83 @@
         this.chats.unshift(item)
       },
 
+      // Replies run on the server whether or not the page is open, so Stop asks the server to
+      // stop; the reply's stream then ends by itself. Before the chat has an id (the first
+      // message hasn't been answered yet) there's only our own request to cancel.
       stop () {
-        if (this.abort != null) {
+        if (this.chatId != null) {
+          fetch(`/chat/${this.chatId}/stop`, { method: `POST` }).catch(() => {})
+        } else if (this.abort != null) {
           this.abort.abort()
         }
       },
 
-      // Enter sends, Shift+Enter starts a new line
-      onKeydown (event) {
-        const isPlainEnter = event.key === `Enter` && event.shiftKey === false && event.isComposing === false
+      // Watches the chat's reply in progress: everything it has sent so far, then live
+      async resume () {
+        const controller = new AbortController()
+        this.abort = controller
+        this.sending = true
 
-        if (isPlainEnter) {
+        try {
+          const response = await fetch(`/chat/${this.chatId}/stream`, { signal: controller.signal })
+          await this.readStream(response, this.chatId)
+        } catch (err) {
+          if (err.name !== `AbortError`) {
+            this.error = err.message
+          }
+        } finally {
+          this.finishSending(controller)
+        }
+      },
+
+      finishSending (controller) {
+        // A tool still running when the reply ended was stopped
+        for (const message of this.messages) {
+          if (message.pending === true) {
+            message.pending = false
+            message.content = `Stopped before it finished.`
+          }
+        }
+
+        // A newer send may have started; only clear our own state
+        if (this.abort === controller) {
+          this.abort = null
+          this.sending = false
+          this.$nextTick(() => this.$refs.input.focus())
+        }
+      },
+
+      // Shift+Enter sends; plain Enter starts a new line
+      onKeydown (event) {
+        const isShiftEnter = event.key === `Enter` && event.shiftKey === true && event.isComposing === false
+
+        if (isShiftEnter) {
           event.preventDefault()
           this.send()
         }
+      },
+
+      // Grows the message box to fit its text, up to its max height (then it scrolls)
+      resizeInput () {
+        const el = this.$refs.input
+        const borders = el.offsetHeight - el.clientHeight
+
+        el.style.height = `auto`
+        el.style.height = `${el.scrollHeight + borders}px`
       },
 
       isNearBottom () {
         const el = this.$refs.messages
         const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
         return distanceFromBottom < 80
+      },
+
+      // A reply's Markdown => HTML that's safe to put in the page. Replies can repeat what the
+      // model read on web pages, so anything like a script or a javascript: link is removed.
+      // Single line breaks are kept, as the model means them.
+      renderMarkdown (text) {
+        const html = marked.parse(text, { gfm: true, breaks: true })
+        return DOMPurify.sanitize(html)
       },
 
       scrollToBottom () {
@@ -179,20 +251,7 @@
             this.error = err.message
           }
         } finally {
-          // A tool still running when the reply ended was stopped
-          for (const message of this.messages) {
-            if (message.pending === true) {
-              message.pending = false
-              message.content = `Stopped before it finished.`
-            }
-          }
-
-          // A newer send may have started; only clear our own state
-          if (this.abort === controller) {
-            this.abort = null
-            this.sending = false
-            this.$nextTick(() => this.$refs.input.focus())
-          }
+          this.finishSending(controller)
         }
       },
 
@@ -248,7 +307,10 @@
           this.messages.push({
             role: `tool`,
             toolCallId: event.toolCallId,
+            name: event.name,
             prompt: event.prompt,
+            url: event.url,
+            query: event.query,
             imageId: null,
             content: ``,
             pending: true,
@@ -265,6 +327,9 @@
           this.setChatTitle(chatId, event.title)
         } else if (event.type === `error`) {
           this.error = event.message
+        } else if (event.type === `finished`) {
+          // The reply ended between the page loading and watching it; show what was saved
+          window.location.reload()
         }
       },
     }))
@@ -327,21 +392,15 @@
 
       <h1 class="min-w-0 flex-1 text-lg font-bold truncate" x-text="chatTitle">{{ chat.title if chat and chat.title else 'New chat' }}</h1>
 
-      {# A new chat takes its models from Settings; an existing chat keeps the ones it started with #}
-      {% if chat %}
-        {% if chatModel %}
-          <span class="min-w-0 max-w-full text-xs text-gray-500 truncate" title="Chosen when this chat started">{{ chatModel }}</span>
-        {% endif %}
-        {% if imageModel %}
-          <span class="min-w-0 max-w-full text-xs text-gray-500 truncate" title="Chosen when this chat started">Images: {{ imageModel }}{% if imageSize %} · {{ imageSize | replace('x', '×') }}{% endif %}</span>
-        {% endif %}
-      {% else %}
-        {% if chatModel %}
-          <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to new chats; change in Settings">{{ chatModel }}</a>
-        {% endif %}
-        {% if imageModel %}
-          <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to new chats; change in Settings">Images: {{ imageModel }}{% if imageSize %} · {{ imageSize | replace('x', '×') }}{% endif %}</a>
-        {% endif %}
+      {# What Settings give every chat right now #}
+      {% if chatModel %}
+        <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to every chat; change in Settings">{{ chatModel }}</a>
+      {% endif %}
+      {% if imageModel %}
+        <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to every chat; change in Settings">Images: {{ imageModel }} · {{ imageSize | replace('x', '×') }}</a>
+      {% endif %}
+      {% if webDomainList %}
+        <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to every chat; change in Settings">Web: {{ webDomainList }}</a>
       {% endif %}
     </div>
 
@@ -375,13 +434,13 @@
                     <div class="mt-1 whitespace-pre-wrap break-words" x-text="message.reasoning"></div>
                   </details>
 
-                  <div x-show="message.content !== ''" class="whitespace-pre-wrap break-words" x-text="message.content"></div>
+                  <div x-show="message.content !== ''" class="markdown break-words" x-html="renderMarkdown(message.content)"></div>
                 </div>
               </div>
             </template>
 
-            {# A tool's result: the image it made, its progress, or what went wrong #}
-            <template x-if="message.role === 'tool'">
+            {# An image tool's result: the image it made, its progress, or what went wrong #}
+            <template x-if="message.role === 'tool' && message.name === 'generate_image'">
               <div class="flex justify-start">
                 <figure class="w-80 sm:w-96 max-w-[85%] p-2 bg-white rounded-2xl shadow-sm">
                   <div x-show="message.pending" class="flex aspect-square items-center justify-center gap-2 rounded-xl bg-gray-100 text-sm text-gray-500">
@@ -402,6 +461,35 @@
                 </figure>
               </div>
             </template>
+
+            {# A web page the model read: a link to it, and what it read when expanded #}
+            <template x-if="message.role === 'tool' && message.name === 'read_web_page'">
+              <div class="flex justify-start">
+                <details class="max-w-[85%] min-w-0 px-4 py-2.5 text-xs text-gray-500 bg-white rounded-2xl shadow-sm">
+                  <summary class="flex items-center gap-2 cursor-pointer select-none">
+                    <span class="inline-block size-4 shrink-0 bg-current" :class="message.pending ? 'icon-loading' : 'icon-web'" aria-hidden="true"></span>
+                    <span x-text="message.pending ? 'Reading' : 'Read'"></span>
+                    <a x-show="message.url" :href="message.url" target="_blank" rel="noopener" class="min-w-0 truncate underline hover:text-gray-800"
+                      x-text="message.url?.replace(/^https?:\/\//, '')" @click.stop></a>
+                  </summary>
+                  <div x-show="!message.pending" class="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap break-words text-gray-700" x-text="message.content"></div>
+                </details>
+              </div>
+            </template>
+
+            {# A web search: its query, and the results the model got when expanded (with working links) #}
+            <template x-if="message.role === 'tool' && message.name === 'web_search'">
+              <div class="flex justify-start">
+                <details class="max-w-[85%] min-w-0 px-4 py-2.5 text-xs text-gray-500 bg-white rounded-2xl shadow-sm">
+                  <summary class="flex items-center gap-2 cursor-pointer select-none">
+                    <span class="inline-block size-4 shrink-0 bg-current" :class="message.pending ? 'icon-loading' : 'icon-search'" aria-hidden="true"></span>
+                    <span x-text="message.pending ? 'Searching' : 'Searched'"></span>
+                    <span x-show="message.query" class="min-w-0 truncate text-gray-700" x-text="message.query"></span>
+                  </summary>
+                  <div x-show="!message.pending" class="markdown mt-2 max-h-80 overflow-y-auto break-words text-gray-700" x-html="renderMarkdown(message.content)"></div>
+                </details>
+              </div>
+            </template>
           </div>
         </template>
 
@@ -420,8 +508,8 @@
       <div class="mx-auto max-w-3xl flex items-end gap-2">
         <label class="sr-only" for="chat-input">Message</label>
         <textarea id="chat-input" x-ref="input" x-model="input" @keydown="onKeydown($event)" rows="2"
-          placeholder="Message {{ config.appName }}… (Shift+Enter for a new line)"
-          class="flex-1 resize-none p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"
+          placeholder="Message {{ config.appName }}… (Shift+Enter to send)"
+          class="flex-1 max-h-60 resize-none p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"
           {% if modelProblem %}disabled{% endif %}></textarea>
 
         <button type="submit" x-show="!sending" :disabled="input.trim() === '' || canSend === false"

@@ -12,7 +12,7 @@ export default async function (ctx, next) {
     }
     ctx.status = status
     let message = err.message
-    if (status >= 500 && config.production) {
+    if (status >= 500 && config.isProduction) {
       message = `There was an error processing your request.`
     }
     ctx.body = message
