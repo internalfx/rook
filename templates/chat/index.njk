@@ -392,17 +392,56 @@
 
       <h1 class="min-w-0 flex-1 text-lg font-bold truncate" x-text="chatTitle">{{ chat.title if chat and chat.title else 'New chat' }}</h1>
 
-      {# What Settings give every chat right now #}
-      {% if chatModel %}
-        <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to every chat; change in Settings">{{ chatModel }}</a>
-      {% endif %}
-      {% if imageModel %}
-        <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to every chat; change in Settings">Images: {{ imageModel }} · {{ imageSize | replace('x', '×') }}</a>
-      {% endif %}
-      {% if webDomainList %}
-        <a href="/settings" class="min-w-0 max-w-full text-xs text-gray-500 truncate hover:text-gray-800 hover:underline" title="Applies to every chat; change in Settings">Web: {{ webDomainList }}</a>
-      {% endif %}
+      <button type="button" class="-mr-1 p-1.5 rounded-md text-gray-600 hover:bg-gray-100" aria-label="Chat settings" title="Current settings"
+        @click="$refs.configDialog.showModal()">
+        <span class="icon-info block size-5 bg-current" aria-hidden="true"></span>
+      </button>
     </div>
+
+    {# What Settings give every chat right now. A click on the backdrop lands on the dialog itself, so it closes. #}
+    <dialog x-ref="configDialog" class="m-auto w-[calc(100%-2rem)] max-w-md p-0 rounded-lg shadow-xl backdrop:bg-black/30" aria-labelledby="config-dialog-title"
+      @click.self="$el.close()">
+      <div class="p-5">
+        <h2 id="config-dialog-title" class="text-base font-bold">Current settings</h2>
+
+        <dl class="mt-4 space-y-3 text-sm">
+          <div>
+            <dt class="text-xs text-gray-500">Chat model</dt>
+            <dd class="break-words">{{ chatModel if chatModel else 'None chosen' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-gray-500">Images</dt>
+            <dd class="break-words">
+              {% if imageModel %}{{ imageModel }} · {{ imageSize | replace('x', '×') }}{% else %}Off{% endif %}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs text-gray-500">Web pages</dt>
+            <dd>
+              {% if webDomains.length > 0 %}
+                <ul class="max-h-48 overflow-y-auto">
+                  {% for domain in webDomains %}
+                    <li class="break-words">{{ domain }}</li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                Off
+              {% endif %}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs text-gray-500">Web search</dt>
+            <dd>{{ 'On' if webSearchOn else 'Off' }}</dd>
+          </div>
+        </dl>
+
+        <form method="dialog" class="mt-5 flex flex-wrap items-center gap-3">
+          <p class="flex-1 text-xs text-gray-500">These apply to every chat.</p>
+          <a href="/settings" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50">Change in Settings</a>
+          <button type="submit" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md">Close</button>
+        </form>
+      </div>
+    </dialog>
 
     <div x-ref="messages" class="flex-1 min-h-0 overflow-y-auto px-4 py-6">
       <div class="mx-auto max-w-3xl space-y-4">
