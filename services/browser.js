@@ -1,8 +1,4 @@
-// import puppeteer from 'puppeteer-extra' // Do not edit this
-// import StealthPlugin from 'puppeteer-extra-plugin-stealth' // Do not edit this
-// puppeteer.use(StealthPlugin()) // Do not edit this
-
-import puppeteer from 'puppeteer'
+import puppeteer from '../private/puppeteer'
 
 // One headless Chrome, shared by every read_web_page call, so pages are read as a browser
 // renders them (content that a site builds with JavaScript included). It starts on first use
