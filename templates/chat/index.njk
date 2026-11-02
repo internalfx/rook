@@ -18,8 +18,8 @@
     // False when no usable chat model is chosen in Settings
     const canSend = {{ 'true' if modelProblem == null else 'false' }}
 
-    // The memory and task tools share one kind of row: what it says while the tool runs and once
-    // it's done, and its icon
+    // The memory, task and Slack tools share one kind of row: what it says while the tool runs and
+    // once it's done, and its icon
     const toolRows = {
       save_memory: { pending: `Remembering`, done: `Remembered`, icon: `icon-memories` },
       search_memories: { pending: `Searching memories`, done: `Searched memories`, icon: `icon-memories` },
@@ -29,6 +29,8 @@
       find_tasks: { pending: `Searching tasks`, done: `Searched tasks`, icon: `icon-tasks` },
       update_task: { pending: `Updating a task`, done: `Updated a task`, icon: `icon-tasks` },
       complete_task: { pending: `Completing a task`, done: `Completed a task`, icon: `icon-tasks` },
+      read_slack: { pending: `Reading Slack`, done: `Read Slack`, icon: `icon-slack` },
+      search_slack: { pending: `Searching Slack`, done: `Searched Slack`, icon: `icon-slack` },
     }
 
     // The math tools' rows show their one-line result, so there's nothing to expand
@@ -315,9 +317,10 @@
         return message.pending ? `icon-loading` : toolRows[message.name].icon
       },
 
-      // What the row shows after its label: the memory's text, the task's title or the query
+      // What the row shows after its label: the memory's text, the task's title, the query or the
+      // Slack conversation
       toolRowText (message) {
-        return message.memory ?? message.taskTitle ?? message.query
+        return message.memory ?? message.taskTitle ?? message.query ?? message.channel
       },
 
       hasResultRow (message) {
@@ -473,6 +476,7 @@
             query: event.query,
             memory: event.memory,
             taskTitle: event.taskTitle,
+            channel: event.channel,
             imageId: null,
             content: ``,
             pending: true,
@@ -603,6 +607,20 @@
           <div>
             <dt class="text-xs text-gray-500">Tasks</dt>
             <dd>{{ 'On' if tasksOn else 'Off' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-gray-500">Slack</dt>
+            <dd>
+              {% if slackLabels.length > 0 %}
+                <ul class="max-h-48 overflow-y-auto">
+                  {% for label in slackLabels %}
+                    <li class="break-words">{{ label }}</li>
+                  {% endfor %}
+                </ul>
+              {% else %}
+                Off
+              {% endif %}
+            </dd>
           </div>
         </dl>
 
@@ -736,7 +754,8 @@
               </div>
             </template>
 
-            {# A memory or task saved, searched for, changed or completed: its text, title or query, and the result when expanded #}
+            {# A memory or task saved, searched for, changed or completed, or Slack read or searched: its text, title, query or
+               conversation, and the result when expanded #}
             <template x-if="hasToolRow(message)">
               <div class="flex justify-start">
                 <details class="max-w-[85%] min-w-0 px-4 py-2.5 text-xs text-gray-500 bg-white rounded-2xl shadow-sm">

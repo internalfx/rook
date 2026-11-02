@@ -41,6 +41,11 @@ export const readMemoryContent = function (argumentsText) {
   return readArgument(argumentsText, `content`)
 }
 
+// The conversation the model gave read_slack, like "#ops"
+export const readSlackChannel = function (argumentsText) {
+  return readArgument(argumentsText, `channel`)
+}
+
 export default {
   parseArguments,
   readImagePrompt,
@@ -48,4 +53,5 @@ export default {
   readSearchQuery,
   readTaskTitle,
   readMemoryContent,
+  readSlackChannel,
 }

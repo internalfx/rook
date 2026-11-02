@@ -8,11 +8,13 @@ import chats from './chats.js'
 import tasks from './tasks.js'
 import runs from './runs.js'
 import notifications from './notifications.js'
+import slack from './slack.js'
 import { maxCallsPerTool, maxRounds, describeCallLimit } from '../ai-tools/limits.js'
 import prompts from '../prompts.js'
 
 // A briefing runs the chat model in the background, with no one watching: it looks over the
-// memories, tasks and recent chats, and what the previous briefing said, tidies the memories and
+// memories, tasks, recent chats and Slack conversations picked in Settings, and what the previous
+// briefing said, tidies the memories and
 // tasks, and writes the user a short overview. Discuss on the Briefing page starts a chat with
 // that overview as the model's first message. For something that matters now, it can notify the
 // user (services/notifications.js). Briefings run on a schedule (see runIfDue) or when asked for.
@@ -44,6 +46,12 @@ const historyLimit = 20
 // How far back the first briefing looks for chats; later ones look back to the last briefing
 const firstLookBack = 1000 * 60 * 60 * 24 * 7
 
+// Slack is read back to the last briefing, but no further than this, and each picked conversation
+// gives at most its newest messages and the replies to its newest threads
+const slackLookBack = 1000 * 60 * 60 * 24
+const slackMessageLimit = 30
+const slackThreadLimit = 3
+
 // Used until an interval is chosen in Settings
 export const defaultBriefingMinutes = 360
 
@@ -52,6 +60,7 @@ const briefingToolNames = [
   `save_memory`, `search_memories`, `update_memory`, `delete_memory`,
   `add_task`, `find_tasks`, `update_task`, `complete_task`,
   `calculate`, `days_between`, `add_to_date`, `find_weekday`,
+  `read_slack`, `search_slack`,
 ]
 
 const insertBriefing = db.query(`
@@ -269,6 +278,70 @@ const describeRecentChats = function () {
   return `Chats since ${formatDay(since)}, most recent first (up to ${recentChatLimit}, each with its last ${messagesPerChat} messages):\n\n${sections.join(`\n\n`)}`
 }
 
+// What's been said in the picked Slack conversations since the last briefing (or the past day,
+// whichever is shorter), leaving out quiet ones; null while Slack is off. A failure to read Slack
+// is said in the section, so the briefing goes on without it.
+const describeSlack = async function (signal) {
+  const conversations = tools.getSlackChannels()
+
+  if (conversations.length === 0) {
+    return null
+  }
+
+  const lastDone = selectLastDone.get()
+  const dayAgo = Date.now() - slackLookBack
+  let sinceTime = dayAgo
+
+  if (lastDone != null) {
+    const lastDoneTime = new Date(lastDone.startedAt).getTime()
+    sinceTime = Math.max(lastDoneTime, dayAgo)
+  }
+
+  const since = new Date(sinceTime)
+  const sinceText = describeWhen(since.toISOString(), true)
+  const sections = []
+
+  try {
+    // Read all at once; the sections keep the order of the picks
+    const reads = conversations.map(function (conversation) {
+      return slack.readConversation({
+        channelId: conversation.id,
+        oldest: since,
+        limit: slackMessageLimit,
+        threadLimit: slackThreadLimit,
+        signal,
+      })
+    })
+
+    const results = await Promise.all(reads)
+
+    for (const [index, conversation] of conversations.entries()) {
+      const result = results[index]
+
+      if (result.messageCount > 0) {
+        sections.push(`### ${conversation.label}\n${result.text}`)
+      }
+    }
+  } catch (err) {
+    if (signal.aborted === true) {
+      throw err
+    }
+
+    console.error(`Reading Slack for a briefing failed`, err)
+    return `Couldn't read Slack: ${err.message}`
+  }
+
+  const labels = conversations.map(function (conversation) {
+    return conversation.label
+  })
+
+  if (sections.length === 0) {
+    return `Nothing has been said since ${sinceText} in the user's Slack conversations at work that you follow (${labels.join(`, `)}).`
+  }
+
+  return `Messages since ${sinceText} in the user's Slack conversations at work that you follow, oldest first (up to ${slackMessageLimit} each, with replies to the newest ${slackThreadLimit} threads; quiet ones left out):\n\n${sections.join(`\n\n`)}`
+}
+
 // One system message, since some models' chat templates only accept one, at the start
 const buildSystemMessage = function () {
   const memoriesMessage = tools.buildMemoriesMessage()
@@ -282,8 +355,9 @@ const buildSystemMessage = function () {
   return { role: `system`, content }
 }
 
-// What rook tells the model about the state of things, as the user's message
-const buildContext = function () {
+// What rook tells the model about the state of things, as the user's message. Pass `signal` to
+// cancel reading Slack.
+const buildContext = async function (signal) {
   const sections = [
     tools.describeCurrentTime(),
     `## Memories\n\n${describeMemories()}`,
@@ -292,6 +366,12 @@ const buildContext = function () {
     `## Notifications you've sent recently\n\n${describeRecentNotifications()}`,
     `## Recent chats\n\n${describeRecentChats()}`,
   ]
+
+  const slackText = await describeSlack(signal)
+
+  if (slackText != null) {
+    sections.push(`## Slack\n\n${slackText}`)
+  }
 
   return sections.join(`\n\n`)
 }
@@ -377,7 +457,8 @@ const runBriefing = async function ({ briefingId, state, signal }) {
 
   const definitions = [...tools.getToolDefinitions(briefingTools), notifyUserTool]
 
-  const messages = [buildSystemMessage(), { role: `user`, content: buildContext() }]
+  const context = await buildContext(signal)
+  const messages = [buildSystemMessage(), { role: `user`, content: context }]
 
   // How many times the model has called each tool in this briefing, by name
   const callCounts = {}

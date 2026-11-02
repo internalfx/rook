@@ -317,6 +317,55 @@
             </div>
           </fieldset>
 
+          {# Only the conversations ticked here are read. The filter box has no name, so it isn't sent
+             with the form or counted as a change. #}
+          <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ filter: '' }">
+            <div class="px-4 py-3 border-b border-gray-200">
+              <legend class="font-bold">Slack</legend>
+              <p class="mt-0.5 text-xs text-gray-500">Lets the chat model and briefings read the Slack conversations you tick here, and only those. Nothing is ever posted to Slack.</p>
+            </div>
+
+            {% if not isSlackConfigured %}
+              <p class="px-4 py-3 text-sm text-gray-500">Add a Slack user token to config.js as <code class="font-mono">slack.oauthToken</code> to let Rook read Slack.</p>
+            {% elif slackError %}
+              <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
+                Couldn't read Slack: {{ slackError }}
+              </div>
+              {% if slackPicks.length > 0 %}
+                <p class="px-4 pb-3 text-sm text-gray-700">
+                  Reading:
+                  {% for conversation in slackPicks %}{{ conversation.label }}{% if not loop.last %}, {% endif %}{% endfor %}
+                </p>
+              {% endif %}
+            {% else %}
+              <input type="hidden" name="slackShown" value="true">
+
+              <div class="px-4 pt-3">
+                <input type="search" x-model="filter" placeholder="Filter" aria-label="Filter Slack conversations" @keydown.enter.prevent
+                  spellcheck="false" autocapitalize="off" autocomplete="off"
+                  class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+              </div>
+
+              <div class="max-h-96 overflow-y-auto py-2">
+                {% for group in slackGroups %}
+                  {% if group.conversations.length > 0 %}
+                    <p class="px-4 pt-2 pb-1 text-xs font-medium text-gray-500">{{ group.title }}</p>
+
+                    {% for conversation in group.conversations %}
+                      <label class="flex items-center gap-3 px-4 py-1.5 cursor-pointer hover:bg-gray-50" data-label="{{ conversation.label }}"
+                        x-show="filter === '' || $el.dataset.label.toLowerCase().includes(filter.toLowerCase())">
+                        <input type="checkbox" name="slackChannels" value="{{ conversation.id }}" class="size-4 shrink-0 accent-sky-600"
+                          {% if conversation.picked %}checked{% endif %}>
+                        <span class="min-w-0 text-sm break-words">{{ conversation.label }}</span>
+                        {% if conversation.kind == 'private' %}<span class="text-xs text-gray-500">private</span>{% endif %}
+                      </label>
+                    {% endfor %}
+                  {% endif %}
+                {% endfor %}
+              </div>
+            {% endif %}
+          </fieldset>
+
           {# Switched off, the interval is kept for next time #}
           <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ briefingOn: {{ 'true' if isBriefingOn else 'false' }} }">
             <div class="flex items-start gap-4 px-4 py-3 border-b border-gray-200">

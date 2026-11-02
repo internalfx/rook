@@ -5,14 +5,15 @@ import webPages from './webPages.js'
 import webSearch from './webSearch.js'
 import memories from './memories.js'
 import tasks from './tasks.js'
-import { readImagePrompt, readToolUrl, readSearchQuery, readTaskTitle, readMemoryContent } from './arguments.js'
+import slack from './slack.js'
+import { readImagePrompt, readToolUrl, readSearchQuery, readTaskTitle, readMemoryContent, readSlackChannel } from './arguments.js'
 
 // Tools the chat model can call, as OpenAI-style function definitions. Every chat has the tools
 // Settings give right now, as an object keyed by tool name ("chat tools", see getChatTools):
 //   { generate_image: { model: `SDXL-Turbo`, size: `512x512` }, read_web_page: {} }
 //
-// Each of time.js, math.js, images.js, webPages.js, webSearch.js, memories.js and tasks.js gives
-// its tools as a list of entries:
+// Each of time.js, math.js, images.js, webPages.js, webSearch.js, memories.js, tasks.js and
+// slack.js gives its tools as a list of entries:
 //   name        what the model calls it
 //   settings    () => its settings for a chat right now ({} when there's nothing to set), or
 //               null when Settings leave it out
@@ -31,6 +32,7 @@ const allTools = [
   ...webSearch.tools,
   ...memories.tools,
   ...tasks.tools,
+  ...slack.tools,
 ]
 
 const toolsByName = new Map(allTools.map(function (tool) {
@@ -119,5 +121,8 @@ export default {
   readMemoryContent,
   isTasksOn: tasks.isTasksOn,
   readTaskTitle,
+  getSlackChannels: slack.getSlackChannels,
+  isSlackOn: slack.isSlackOn,
+  readSlackChannel,
   runTool,
 }

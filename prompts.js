@@ -178,6 +178,20 @@ export const tools = {
     },
   },
 
+  read_slack: {
+    description: `Read the latest messages in one of the user's Slack conversations at work, with replies to its newest threads. Use it for what's been said, asked or decided there.`,
+    parameters: {
+      since: `YYYY-MM-DD to read from that day on. Leave it out for the latest messages.`,
+    },
+  },
+
+  search_slack: {
+    description: ({ conversations }) => `Search the user's Slack conversations at work: ${conversations}. Only these are searched.`,
+    parameters: {
+      query: `Words to find. Slack's search syntax works, e.g. "exact phrase" or after:2026-11-01.`,
+    },
+  },
+
   // Briefings only
   notify_user: {
     description: `Push a notification to the user's phone about something important: new since your previous briefing, or more urgent than it was (e.g. a task due today still not done). Use it sparingly; most briefings need none, and never repeat a recent notification unless it has become more urgent.`,

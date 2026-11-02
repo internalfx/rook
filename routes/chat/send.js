@@ -301,8 +301,9 @@ const runToolCalls = async function ({ toolCalls, chat, chatTools, history, send
     const query = tools.readSearchQuery(argumentsText)
     const memory = tools.readMemoryContent(argumentsText)
     const taskTitle = tools.readTaskTitle(argumentsText)
+    const channel = tools.readSlackChannel(argumentsText)
 
-    sendEvent({ type: `toolCall`, toolCallId: call.id, name, prompt, url, query, memory, taskTitle })
+    sendEvent({ type: `toolCall`, toolCallId: call.id, name, prompt, url, query, memory, taskTitle, channel })
 
     let result = null
 
@@ -345,7 +346,7 @@ const runToolCalls = async function ({ toolCalls, chat, chatTools, history, send
 // services/runs.js), and saves each message as it completes:
 //   { type: "assistant" }                                 a new reply from the model begins
 //   { type: "reasoning" | "content", text }               more of that reply
-//   { type: "toolCall", toolCallId, name, prompt, url, query, memory, taskTitle }  the model asked for a tool
+//   { type: "toolCall", toolCallId, name, prompt, url, query, memory, taskTitle, channel }  the model asked for a tool
 //   { type: "toolResult", toolCallId, content, imageId }  the tool finished
 //   { type: "title", title }                              a new chat's title
 //   { type: "error", message }

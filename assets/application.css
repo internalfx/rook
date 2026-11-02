@@ -95,6 +95,10 @@ table tr td {
   -webkit-mask: url(/static/icons/mdi--image-plus-outline.svg) center / contain no-repeat;
   mask: url(/static/icons/mdi--image-plus-outline.svg) center / contain no-repeat;
 }
+.icon-slack {
+  -webkit-mask: url(/static/icons/mdi--slack.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--slack.svg) center / contain no-repeat;
+}
 .icon-close {
   -webkit-mask: url(/static/icons/mdi--close.svg) center / contain no-repeat;
   mask: url(/static/icons/mdi--close.svg) center / contain no-repeat;

@@ -5,6 +5,7 @@ import settings from '../../services/settings.js'
 import tools from '../../ai-tools/index.js'
 import briefings from '../../services/briefings.js'
 import notifications from '../../services/notifications.js'
+import slack from '../../services/slack.js'
 import { parseDomains } from '../../ai-tools/sites.js'
 import { formatContextLength } from '../../lib/format.js'
 
@@ -83,6 +84,49 @@ export const GET = async function (ctx) {
   const briefingMinutes = briefings.getBriefingMinutes()
   const { url: ntfyUrl, token: ntfyToken } = notifications.getNtfySettings()
 
+  // The Slack conversations to pick from, as two groups (channels, then group DMs and DMs), each
+  // with the picked ones first. While Slack can't be read, the page shows why, with the picks as
+  // they are.
+  const isSlackConfigured = slack.isConfigured()
+  const slackPicks = tools.getSlackChannels()
+  let slackGroups = []
+  let slackError = null
+
+  if (isSlackConfigured) {
+    try {
+      const conversations = await slack.listMyConversations()
+
+      const pickedIds = new Set(slackPicks.map(function (conversation) {
+        return conversation.id
+      }))
+
+      const options = conversations.map(function (conversation) {
+        return { ...conversation, picked: pickedIds.has(conversation.id) }
+      })
+
+      // The list comes sorted by kind, then label; a stable sort keeps that within each half
+      const pickedFirst = function (a, b) {
+        return Number(b.picked) - Number(a.picked)
+      }
+
+      const channels = options.filter(function (option) {
+        return option.kind === `channel` || option.kind === `private`
+      })
+
+      const directMessages = options.filter(function (option) {
+        return option.kind === `group` || option.kind === `dm`
+      })
+
+      slackGroups = [
+        { title: `Channels`, conversations: channels.sort(pickedFirst) },
+        { title: `Direct messages`, conversations: directMessages.sort(pickedFirst) },
+      ]
+    } catch (err) {
+      console.error(err)
+      slackError = err.message
+    }
+  }
+
   ctx.body = ctx.nunjucks(`settings/index`, {
     modelsError,
     chatModels,
@@ -106,6 +150,10 @@ export const GET = async function (ctx) {
     briefingMinutes,
     ntfyUrl,
     ntfyToken,
+    isSlackConfigured,
+    slackGroups,
+    slackPicks,
+    slackError,
   })
 }
 
@@ -132,6 +180,10 @@ export const POST = async function (ctx) {
       // An empty topic URL turns phone notifications off
       ntfyUrl: joi.string().trim(),
       ntfyToken: joi.string().trim(),
+      // The ids of the Slack conversations picked: a checkbox each, so one arrives as a string.
+      // slackShown says the list was on the page, so a Slack outage doesn't clear the picks.
+      slackChannels: joi.array().items(joi.string()).single(),
+      slackShown: joi.boolean(),
       // Where to go once saved, when saving from the "Save your changes?" dialog
       returnTo: joi.string(),
     }).validateAsync(ctx.request.body)
@@ -203,6 +255,23 @@ export const POST = async function (ctx) {
     return ctx.redirect(`/settings`)
   }
 
+  // The picks are saved with their labels, so chats can name them without asking Slack
+  let slackPicks = null
+
+  if (args.slackShown === true) {
+    try {
+      const conversations = await slack.listMyConversations()
+      const pickedIds = new Set(args.slackChannels ?? [])
+
+      slackPicks = conversations.filter(function (conversation) {
+        return pickedIds.has(conversation.id)
+      })
+    } catch (err) {
+      ctx.addFlash(`Couldn't read Slack to save its conversations: ${err.message}`, `error`)
+      return ctx.redirect(`/settings`)
+    }
+  }
+
   if (args.chatModel != null) {
     settings.set(`chatModel`, args.chatModel)
   }
@@ -266,6 +335,15 @@ export const POST = async function (ctx) {
     settings.set(`ntfyToken`, args.ntfyToken)
   } else {
     settings.unset(`ntfyToken`)
+  }
+
+  // Left as they are when the list wasn't on the page
+  if (slackPicks != null) {
+    if (slackPicks.length > 0) {
+      settings.set(`slackChannels`, slackPicks)
+    } else {
+      settings.unset(`slackChannels`)
+    }
   }
 
   if (turnImagesOff) {
