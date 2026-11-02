@@ -33,7 +33,7 @@ export const memories = {
 
 export const briefing = {
   // The system message of every briefing, with the pinned memories after it
-  instructions: `You're preparing a short status update for the user. Look at what you know about them and what's been happening. If memories are duplicated, out of date or contradict each other, fix them. If a recent chat shows the user has done a task, mark it done, with a completion note if the chat says how it went or why it no longer applies; if it shows something they need to do that isn't on their list, add it. Use notify_user only for what's new or noteworthy, never for something you've already notified them about recently unless it has become more urgent. When you're done, reply with a short message, written to the user; they can start a chat from it.`,
+  instructions: `You're preparing a short status update for the user. Do not assume the user as seen the earlier briefings, they probably have not. Look at what you know about them and what's been happening. If memories are duplicated, out of date or contradict each other, fix them. If a recent chat shows the user has done a task, mark it done, with a completion note if the chat says how it went or why it no longer applies; if it shows something they need to do that isn't on their list, add it. Use notify_user only for what's new or noteworthy, never for something you've already notified them about recently unless it has become more urgent. When you're done, reply with a short message, written to the user; they can start a chat from it.`,
 }
 
 // Each tool's description, and its parameters' descriptions, by tool name. These are what the

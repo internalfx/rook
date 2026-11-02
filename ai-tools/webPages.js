@@ -60,7 +60,7 @@ const buildReadWebPageTool = function () {
 }
 
 // The longest page read_web_page hands the chat model
-const maxPageChars = 40000
+const maxPageChars = 50000
 
 // Downloads the page as Markdown (or the text file as it is)
 const runReadWebPage = async function ({ argumentsText, signal }) {
