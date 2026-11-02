@@ -107,7 +107,7 @@ const runCalculation = function (work, describeMistake = (message) => message) {
   try {
     return { content: work(), imageId: null }
   } catch (err) {
-    if (err instanceof calculator.CalculationError) {
+    if (err.isCalculationError === true) {
       return { content: describeMistake(err.message), imageId: null }
     }
 

@@ -2,7 +2,6 @@ import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
 import tasks from '../services/tasks.js'
-import { CalculationError } from './calculator.js'
 import { parseArguments } from './arguments.js'
 import prompts from '../prompts.js'
 
@@ -119,8 +118,12 @@ for (const name of Intl.supportedValuesOf(`timeZone`)) {
   }
 }
 
+// A mistake in what the model asked for, marked like calculator.js's, so runConvertTime tells
+// the model instead of throwing
 const fail = function (message) {
-  return new CalculationError(message)
+  const err = new Error(message)
+  err.isCalculationError = true
+  return err
 }
 
 // The zone's name as Intl writes it, or null when it isn't one
@@ -315,8 +318,8 @@ const describeDifference = function (instant, fromZone, toZone) {
   return text
 }
 
-// The time in `fromZone` (now, when there's no time) in each of `toZones`, written out. Throws a
-// CalculationError saying what's wrong with the call.
+// The time in `fromZone` (now, when there's no time) in each of `toZones`, written out. Throws an
+// error marked isCalculationError saying what's wrong with the call.
 export const convertTime = function ({ time, fromZone, toZones }) {
   const notes = []
   const readZone = function (text) {
@@ -383,7 +386,7 @@ const runConvertTime = function ({ argumentsText }) {
 
     return { content, imageId: null }
   } catch (err) {
-    if (err instanceof CalculationError) {
+    if (err.isCalculationError === true) {
       return { content: `Converting the time failed: ${err.message}`, imageId: null }
     }
 

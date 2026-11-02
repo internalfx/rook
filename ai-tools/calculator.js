@@ -27,12 +27,13 @@ export const dateUnits = [`days`, `weeks`, `months`, `years`]
 // Monday first, as the model is offered them; dayjs counts from Sunday (see findWeekday)
 export const weekdays = [`monday`, `tuesday`, `wednesday`, `thursday`, `friday`, `saturday`, `sunday`]
 
-// A mistake in what the model asked for, with a message it can act on. Anything else thrown
-// from here is a bug.
-export class CalculationError extends Error {}
-
+// A mistake in what the model asked for, with a message it can act on: an Error marked with
+// isCalculationError, which ai-tools/math.js tells the model. Anything else thrown from here is a
+// bug.
 const fail = function (message) {
-  return new CalculationError(message)
+  const err = new Error(message)
+  err.isCalculationError = true
+  return err
 }
 
 const plural = function (count, word) {
@@ -201,8 +202,8 @@ const tokenize = function (text) {
   return tokens
 }
 
-// Works out an expression like "(84.50 * 1.15) / 3" and returns the number. Throws a
-// CalculationError saying what's wrong with it.
+// Works out an expression like "(84.50 * 1.15) / 3" and returns the number. Throws an error
+// marked isCalculationError saying what's wrong with it.
 export const evaluateExpression = function (text) {
   if (typeof text !== `string` || text.trim() === ``) {
     throw fail(`Give an expression to work out, e.g. (84.50 * 1.15) / 3.`)
@@ -592,7 +593,6 @@ export const findWeekday = function (weekdayText, fromText, direction) {
 export default {
   dateUnits,
   weekdays,
-  CalculationError,
   evaluateExpression,
   formatNumber,
   readDay,
