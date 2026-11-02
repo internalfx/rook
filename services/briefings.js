@@ -107,8 +107,12 @@ const selectLastFinishedAt = db.query(`SELECT MAX(finishedAt) AS finishedAt FROM
 // A briefing still marked running was cut off by a restart
 failStaleBriefings.run({ error: `The server restarted during the briefing.`, now: new Date().toISOString() })
 
-// The briefing running now, as { id, abort }, or null
+// The briefing running now, as { id, abort, finished }, or null. `finished` settles once it's
+// saved.
 let current = null
+
+// What a cancelled briefing's error says, after "This briefing didn't finish:"
+const cancelledError = `You cancelled it.`
 
 const instructions = prompts.briefing.instructions({ maxSuggestions })
 
@@ -529,6 +533,9 @@ const runBriefing = async function ({ briefingId, state, signal }) {
     const isLastRound = round === maxRounds
 
     for (const call of toolCalls) {
+      // A cancelled briefing doesn't go on to the rest of the round's calls
+      signal.throwIfAborted()
+
       const result = await runBriefingTool({ call, briefingId, briefingTools, callCounts, state, isLastRound, signal })
 
       state.steps.push({ name: call.function.name, arguments: call.function.arguments, result })
@@ -555,9 +562,14 @@ const executeBriefing = async function (briefing) {
       overview = reply
     }
   } catch (err) {
-    console.error(`Briefing failed`, err)
     status = `failed`
-    error = err.message
+
+    if (briefing.abort.signal.aborted) {
+      error = cancelledError
+    } else {
+      console.error(`Briefing failed`, err)
+      error = err.message
+    }
   }
 
   try {
@@ -582,10 +594,23 @@ export const startBriefing = function ({ startedBy }) {
 
   insertBriefing.run({ id, startedBy, now: new Date().toISOString() })
 
-  current = { id, abort: new AbortController() }
-  executeBriefing(current)
+  current = { id, abort: new AbortController(), finished: null }
+  current.finished = executeBriefing(current)
 
   return id
+}
+
+// Stops the running briefing, if there is one, and waits until it's saved. It's saved as failed,
+// keeping what it did before then: its steps, and the suggestions and notifications it made.
+export const cancelBriefing = async function () {
+  const briefing = current
+
+  if (briefing == null) {
+    return
+  }
+
+  briefing.abort.abort()
+  await briefing.finished
 }
 
 export const isRunning = function () {
@@ -704,6 +729,7 @@ export const hasUnseen = function () {
 export default {
   defaultBriefingMinutes,
   startBriefing,
+  cancelBriefing,
   isRunning,
   isScheduleOn,
   getBriefingMinutes,

@@ -44,7 +44,7 @@
   {% macro briefingBody(briefing) %}
     {% if briefing.status == 'failed' %}
       <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
-        This briefing failed: {{ briefing.error }}
+        This briefing didn't finish: {{ briefing.error }}
       </div>
     {% endif %}
 
@@ -148,9 +148,14 @@
 
     <div class="space-y-6">
       {% if isRunning %}
-        <div x-data="briefingStatus" class="flex items-center gap-3 p-4 text-sm rounded-lg border border-sky-200 bg-sky-50 text-sky-800" role="status">
+        <div x-data="briefingStatus" class="flex flex-wrap items-center gap-3 p-4 text-sm rounded-lg border border-sky-200 bg-sky-50 text-sky-800" role="status">
           <span class="icon-loading inline-block size-5 shrink-0 bg-current" aria-hidden="true"></span>
-          <span>Briefing now: Rook is looking over your memories, tasks and recent chats. This page updates when it's done.</span>
+          <span class="flex-1 min-w-48">Briefing now: Rook is looking over your memories, tasks and recent chats. This page updates when it's done.</span>
+
+          <form method="post" action="/briefing/cancel" x-data="{ cancelling: false }" @submit="cancelling = true">
+            <button type="submit" class="px-3 py-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              :disabled="cancelling" x-text="cancelling ? 'Cancelling…' : 'Cancel briefing'">Cancel briefing</button>
+          </form>
         </div>
       {% endif %}
 
