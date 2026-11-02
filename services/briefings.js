@@ -7,6 +7,7 @@ import memories from './memories.js'
 import chats from './chats.js'
 import tasks from './tasks.js'
 import runs from './runs.js'
+import { readModelReply } from './modelStream.js'
 import notifications from './notifications.js'
 import slack from './slack.js'
 import { maxCallsPerTool, maxRounds, describeCallLimit } from '../ai-tools/limits.js'
@@ -46,9 +47,8 @@ const historyLimit = 20
 // How far back the first briefing looks for chats; later ones look back to the last briefing
 const firstLookBack = 1000 * 60 * 60 * 24 * 7
 
-// Slack is read back to the last briefing, but no further than this, and each picked conversation
-// gives at most its newest messages and the replies to its newest threads
-const slackLookBack = 1000 * 60 * 60 * 24
+// Each picked Slack conversation gives its newest messages, whatever their age, and the replies to
+// its newest threads
 const slackMessageLimit = 30
 const slackThreadLimit = 3
 
@@ -68,7 +68,7 @@ const insertBriefing = db.query(`
   VALUES ($id, 'running', $startedBy, $now)
 `)
 const finishBriefingRow = db.query(`
-  UPDATE briefings SET status = $status, overview = $overview, error = $error, steps = $steps, finishedAt = $now
+  UPDATE briefings SET status = $status, overview = $overview, error = $error, transcript = $transcript, finishedAt = $now
   WHERE id = $id
 `)
 const failStaleBriefings = db.query(`
@@ -90,12 +90,17 @@ const selectLastFinishedAt = db.query(`SELECT MAX(finishedAt) AS finishedAt FROM
 // A briefing still marked running was cut off by a restart
 failStaleBriefings.run({ error: `The server restarted during the briefing.`, now: new Date().toISOString() })
 
-// The briefing running now, as { id, abort, finished }, or null. `finished` settles once it's
-// saved.
+// The briefing running now, as { id, abort, run, finished }, or null. `run` is what the Briefing
+// page watches (see services/runs.js); `finished` settles once it's saved.
 let current = null
 
 // What a cancelled briefing's error says, after "This briefing didn't finish:"
 const cancelledError = `You cancelled it.`
+
+// How long a whole briefing may take. Its replies stream, which has no limit once the model has
+// started answering, so one that stalled would otherwise keep scheduled briefings waiting.
+const briefingTimeLimit = 1000 * 60 * 30
+const timeLimitError = `It took longer than ${briefingTimeLimit / 60000} minutes, so it was stopped.`
 
 const notifyUserTool = {
   type: `function`,
@@ -278,9 +283,9 @@ const describeRecentChats = function () {
   return `Chats since ${formatDay(since)}, most recent first (up to ${recentChatLimit}, each with its last ${messagesPerChat} messages):\n\n${sections.join(`\n\n`)}`
 }
 
-// What's been said in the picked Slack conversations since the last briefing (or the past day,
-// whichever is shorter), leaving out quiet ones; null while Slack is off. A failure to read Slack
-// is said in the section, so the briefing goes on without it.
+// The newest messages in each picked Slack conversation, whatever their age, so the model always
+// sees where each conversation stands; one with no messages at all is left out. Null while Slack
+// is off. A failure to read Slack is said in the section, so the briefing goes on without it.
 const describeSlack = async function (signal) {
   const conversations = tools.getSlackChannels()
 
@@ -288,17 +293,6 @@ const describeSlack = async function (signal) {
     return null
   }
 
-  const lastDone = selectLastDone.get()
-  const dayAgo = Date.now() - slackLookBack
-  let sinceTime = dayAgo
-
-  if (lastDone != null) {
-    const lastDoneTime = new Date(lastDone.startedAt).getTime()
-    sinceTime = Math.max(lastDoneTime, dayAgo)
-  }
-
-  const since = new Date(sinceTime)
-  const sinceText = describeWhen(since.toISOString(), true)
   const sections = []
 
   try {
@@ -306,7 +300,7 @@ const describeSlack = async function (signal) {
     const reads = conversations.map(function (conversation) {
       return slack.readConversation({
         channelId: conversation.id,
-        oldest: since,
+        oldest: null,
         limit: slackMessageLimit,
         threadLimit: slackThreadLimit,
         signal,
@@ -336,10 +330,10 @@ const describeSlack = async function (signal) {
   })
 
   if (sections.length === 0) {
-    return `Nothing has been said since ${sinceText} in the user's Slack conversations at work that you follow (${labels.join(`, `)}).`
+    return `There are no messages in the user's Slack conversations at work that you follow (${labels.join(`, `)}).`
   }
 
-  return `Messages since ${sinceText} in the user's Slack conversations at work that you follow, oldest first (up to ${slackMessageLimit} each, with replies to the newest ${slackThreadLimit} threads; quiet ones left out):\n\n${sections.join(`\n\n`)}`
+  return `The newest messages in the user's Slack conversations at work that you follow, oldest first (up to ${slackMessageLimit} each, with replies to the newest ${slackThreadLimit} threads). Some may be old; each has its date and time.\n\n${sections.join(`\n\n`)}`
 }
 
 // One system message, since some models' chat templates only accept one, at the start
@@ -438,8 +432,11 @@ const runBriefingTool = async function ({ call, briefingId, briefingTools, callC
 }
 
 // Runs the model until it replies without calling a tool, and returns that reply: the overview.
-// Each tool call is added to `state.steps` as it's made, so a failed briefing keeps what it did.
-const runBriefing = async function ({ briefingId, state, signal }) {
+// Its replies stream to whoever is watching (the Briefing page, see routes/briefing/stream.js)
+// as rook's own events, the same as a chat's (see runConversation in routes/chat/send.js). Each
+// reply and tool call is added to `state.transcript` as it finishes, in the chat page's own form,
+// so a briefing that fails part way keeps what it did.
+const runBriefing = async function ({ briefingId, run, state, signal }) {
   const model = settings.get(`chatModel`)
 
   if (model == null) {
@@ -463,16 +460,41 @@ const runBriefing = async function ({ briefingId, state, signal }) {
   // How many times the model has called each tool in this briefing, by name
   const callCounts = {}
 
-  for (let round = 1; round <= maxRounds; round += 1) {
-    const reply = await lemonade.completeChat({ model, messages, tools: definitions, signal })
-    const content = reply.content ?? ``
-    const toolCalls = reply.tool_calls ?? []
+  const sendEvent = function (event) {
+    runs.emit(run, event)
+  }
 
-    if (toolCalls.length === 0) {
-      return content.trim()
+  // A reply that said or thought nothing (it only called tools) isn't kept
+  const addReply = function (reasoning, content) {
+    if (reasoning !== `` || content !== ``) {
+      state.transcript.push({ role: `assistant`, reasoning, content })
+    }
+  }
+
+  for (let round = 1; round <= maxRounds; round += 1) {
+    const upstream = await lemonade.streamChat({ model, messages, tools: definitions, signal })
+
+    sendEvent({ type: `assistant` })
+
+    const reply = await readModelReply({ upstream, sendEvent, signal })
+
+    // Cut short: by Cancel or the time limit, or by the stream failing
+    if (reply.finished === false) {
+      addReply(reply.reasoning, reply.content)
+      signal.throwIfAborted()
+      throw new Error(reply.error ?? `The reply was cut short.`)
     }
 
-    messages.push({ role: `assistant`, content, tool_calls: toolCalls })
+    const toolCalls = reply.toolCalls
+
+    // The overview's text is saved as the overview, so only its thinking is kept here
+    if (toolCalls.length === 0) {
+      addReply(reply.reasoning, ``)
+      return reply.content.trim()
+    }
+
+    addReply(reply.reasoning, reply.content)
+    messages.push({ role: `assistant`, content: reply.content, tool_calls: toolCalls })
 
     const isLastRound = round === maxRounds
 
@@ -480,9 +502,16 @@ const runBriefing = async function ({ briefingId, state, signal }) {
       // A cancelled briefing doesn't go on to the rest of the round's calls
       signal.throwIfAborted()
 
+      const name = call.function.name
+      const details = tools.readCallDetails(call.function.arguments)
+
+      sendEvent({ type: `toolCall`, toolCallId: call.id, name, ...details })
+
       const result = await runBriefingTool({ call, briefingId, briefingTools, callCounts, state, isLastRound, signal })
 
-      state.steps.push({ name: call.function.name, arguments: call.function.arguments, result })
+      sendEvent({ type: `toolResult`, toolCallId: call.id, content: result, imageId: null })
+
+      state.transcript.push({ role: `tool`, toolCallId: call.id, name, ...details, content: result, imageId: null, pending: false })
       messages.push({ role: `tool`, tool_call_id: call.id, content: result })
     }
   }
@@ -493,14 +522,18 @@ const runBriefing = async function ({ briefingId, state, signal }) {
 
 // Runs the briefing and saves how it went. It never throws: a failure is saved on the briefing.
 const executeBriefing = async function (briefing) {
-  const state = { steps: [], notificationCount: 0 }
+  const state = { transcript: [], notificationCount: 0 }
+
+  // It stops when cancelled, or when it has taken too long
+  const timeLimit = AbortSignal.timeout(briefingTimeLimit)
+  const signal = AbortSignal.any([briefing.abort.signal, timeLimit])
 
   let status = `done`
   let overview = null
   let error = null
 
   try {
-    const reply = await runBriefing({ briefingId: briefing.id, state, signal: briefing.abort.signal })
+    const reply = await runBriefing({ briefingId: briefing.id, run: briefing.run, state, signal })
 
     if (reply !== ``) {
       overview = reply
@@ -510,6 +543,8 @@ const executeBriefing = async function (briefing) {
 
     if (briefing.abort.signal.aborted) {
       error = cancelledError
+    } else if (timeLimit.aborted) {
+      error = timeLimitError
     } else {
       console.error(`Briefing failed`, err)
       error = err.message
@@ -517,13 +552,16 @@ const executeBriefing = async function (briefing) {
   }
 
   try {
-    const steps = JSON.stringify(state.steps)
-    finishBriefingRow.run({ id: briefing.id, status, overview, error, steps, now: new Date().toISOString() })
+    const transcript = JSON.stringify(state.transcript)
+    finishBriefingRow.run({ id: briefing.id, status, overview, error, transcript, now: new Date().toISOString() })
     deleteOldBriefings.run({ keep: keptBriefings })
   } catch (err) {
     console.error(`Saving the briefing failed`, err)
   } finally {
+    // Not running any more by the time its watchers' streams end, so the page they reload to
+    // shows it finished
     current = null
+    runs.finishRun(briefing.run)
   }
 }
 
@@ -538,14 +576,26 @@ export const startBriefing = function ({ startedBy }) {
 
   insertBriefing.run({ id, startedBy, now: new Date().toISOString() })
 
-  current = { id, abort: new AbortController(), finished: null }
+  // Not kept with the chats' runs, so scheduled briefings still only wait for chats
+  const run = runs.newRun()
+
+  current = { id, abort: run.abort, run, finished: null }
   current.finished = executeBriefing(current)
 
   return id
 }
 
+// The running briefing's run, for the Briefing page to watch, or null
+export const getRun = function () {
+  if (current == null) {
+    return null
+  }
+
+  return current.run
+}
+
 // Stops the running briefing, if there is one, and waits until it's saved. It's saved as failed,
-// keeping what it did before then: its steps, and the notifications it sent.
+// keeping what it did before then: its transcript, and the notifications it sent.
 export const cancelBriefing = async function () {
   const briefing = current
 
@@ -609,9 +659,9 @@ export const runIfDue = function () {
   startBriefing({ startedBy: `schedule` })
 }
 
-// steps comes back parsed
+// The transcript comes back parsed
 const toBriefing = function (row) {
-  return { ...row, steps: JSON.parse(row.steps) }
+  return { ...row, transcript: JSON.parse(row.transcript) }
 }
 
 // A briefing by id, or null
@@ -670,6 +720,7 @@ export default {
   defaultBriefingMinutes,
   startBriefing,
   cancelBriefing,
+  getRun,
   isRunning,
   isScheduleOn,
   getBriefingMinutes,

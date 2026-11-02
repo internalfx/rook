@@ -13,6 +13,18 @@ const keepAliveInterval = 1000 * 15
 
 const runsByChatId = new Map()
 
+// A run that isn't kept with the chats: a briefing's (see services/briefings.js), which is
+// watched the same way. `startRun` makes a chat's with it.
+export const newRun = function ({ chatId = null, baseCount = 0 } = {}) {
+  return {
+    chatId,
+    baseCount,
+    abort: new AbortController(),
+    events: [],
+    watchers: new Set(),
+  }
+}
+
 // `baseCount` is how many messages the chat had saved when the run started, counting the
 // user's new message; the page shows those, then replays the run's events after them
 export const startRun = function ({ chatId, baseCount }) {
@@ -20,13 +32,7 @@ export const startRun = function ({ chatId, baseCount }) {
     throw new Error(`This chat is still replying.`)
   }
 
-  const run = {
-    chatId,
-    baseCount,
-    abort: new AbortController(),
-    events: [],
-    watchers: new Set(),
-  }
+  const run = newRun({ chatId, baseCount })
 
   runsByChatId.set(chatId, run)
 
@@ -109,6 +115,7 @@ export const watchRun = function (run, output) {
 }
 
 export default {
+  newRun,
   startRun,
   getRun,
   hasActiveRuns,

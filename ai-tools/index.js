@@ -6,7 +6,7 @@ import webSearch from './webSearch.js'
 import memories from './memories.js'
 import tasks from './tasks.js'
 import slack from './slack.js'
-import { readImagePrompt, readToolUrl, readSearchQuery, readTaskTitle, readMemoryContent, readSlackChannel } from './arguments.js'
+import { readCallDetails } from './arguments.js'
 
 // Tools the chat model can call, as OpenAI-style function definitions. Every chat has the tools
 // Settings give right now, as an object keyed by tool name ("chat tools", see getChatTools):
@@ -115,14 +115,9 @@ export default {
   isMemoriesOn: memories.isMemoriesOn,
   buildMemoriesMessage: memories.buildMemoriesMessage,
   describeCurrentTime: time.describeCurrentTime,
-  readImagePrompt,
-  readToolUrl,
-  readSearchQuery,
-  readMemoryContent,
   isTasksOn: tasks.isTasksOn,
-  readTaskTitle,
   getSlackChannels: slack.getSlackChannels,
   isSlackOn: slack.isSlackOn,
-  readSlackChannel,
+  readCallDetails,
   runTool,
 }

@@ -1,37 +1,118 @@
 {% extends 'layouts/default' %}
 
 {% block head %}
-<script src="/static/marked.min.js"></script>
-<script src="/static/purify.min.js"></script>
+{% include 'partials/runMessagesScript' %}
 <script>
   document.addEventListener(`alpine:init`, () => {
     // The model writes Markdown => HTML that's safe to put in the page, as chat replies are
     Alpine.magic(`markdown`, () => function (text) {
-      const html = marked.parse(text, { gfm: true, breaks: true })
-      return DOMPurify.sanitize(html)
+      return runMessages.renderMarkdown(text)
     })
 
-    // While a briefing runs: checks every few seconds, and reloads to show it once it's done
-    Alpine.data(`briefingStatus`, () => ({
-      timer: null,
+    // The running briefing as it goes: its replies, with their thinking, and its tool calls,
+    // drawn as a chat's are. Everything it has done so far comes first, so a page opened part
+    // way catches up. When it ends, the page reloads to show it finished.
+    Alpine.data(`briefingRun`, () => ({
+      ...runMessages,
+      messages: [],
 
       init () {
-        this.timer = setInterval(() => this.check(), 5000)
+        this.watch()
       },
 
-      destroy () {
-        clearInterval(this.timer)
-      },
-
-      async check () {
+      async watch () {
         try {
-          const response = await fetch(`/briefing/status`)
-          const body = await response.json()
-
-          if (body.running === false) {
-            window.location.reload()
-          }
+          const response = await fetch(`/briefing/stream`)
+          await this.readStream(response)
         } catch (err) {}
+
+        window.location.reload()
+      },
+
+      // The briefing is a stream of rook's own events, one JSON object per "data:" line (see
+      // runBriefing in services/briefings.js), as a chat's reply is
+      async readStream (response) {
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ``
+
+        while (true) {
+          const { value, done } = await reader.read()
+
+          if (done) {
+            break
+          }
+
+          buffer += decoder.decode(value, { stream: true })
+
+          const lines = buffer.split(`\n`)
+          // The last piece may be half a line; keep it for the next chunk
+          buffer = lines.pop()
+
+          const shouldScroll = this.isNearBottom()
+
+          for (const line of lines) {
+            this.readEvent(line)
+          }
+
+          if (shouldScroll) {
+            this.scrollToBottom()
+          }
+        }
+      },
+
+      // Its replies and tool calls. An error shows on the briefing once it has finished, and
+      // "finished" (it ended before the page started watching) ends the stream, so both are
+      // left to the reload.
+      readEvent (line) {
+        const trimmed = line.trim()
+
+        if (trimmed.startsWith(`data:`) === false) {
+          return
+        }
+
+        const event = JSON.parse(trimmed.slice(5))
+        runMessages.applyRunEvent(this.messages, event)
+      },
+
+      // True while it's waiting on the model with nothing new to show: before its first reply
+      // (it's reading what it's given), during a reply's thinking, and after a tool's result
+      isWaiting () {
+        const last = this.messages[this.messages.length - 1]
+
+        if (last == null) {
+          return true
+        }
+
+        if (last.role === `assistant`) {
+          return last.content === ``
+        }
+
+        return last.pending === false
+      },
+
+      isNearBottom () {
+        const el = this.$refs.messages
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+        return distanceFromBottom < 80
+      },
+
+      scrollToBottom () {
+        this.$nextTick(() => {
+          const el = this.$refs.messages
+          el.scrollTop = el.scrollHeight
+        })
+      },
+    }))
+
+    // A finished briefing's transcript, from the page's JSON (see routes/briefing/index.js)
+    Alpine.data(`briefingTranscript`, () => ({
+      ...runMessages,
+      messages: [],
+
+      init () {
+        const transcripts = JSON.parse(document.getElementById(`briefing-transcripts`).textContent)
+        this.messages = transcripts[this.$el.dataset.briefingId] ?? []
       },
     }))
   })
@@ -39,6 +120,8 @@
 {% endblock %}
 
 {% block body %}
+<script type="application/json" id="briefing-transcripts">{{ transcriptsJSON | safe }}</script>
+
   {# A briefing's overview, with Discuss, and what it did #}
   {% macro briefingBody(briefing) %}
     {% if briefing.status == 'failed' %}
@@ -61,18 +144,20 @@
       <p class="px-4 py-3 text-sm text-gray-500">It didn't write an overview.</p>
     {% endif %}
 
-    {% if briefing.steps.length > 0 %}
-      <details class="px-4 py-3 text-xs text-gray-500 border-t border-gray-100">
-        <summary class="cursor-pointer select-none">What it did · {{ briefing.steps.length }} {{ 'step' if briefing.steps.length == 1 else 'steps' }}</summary>
-        <ol class="mt-2 space-y-2">
-          {% for step in briefing.steps %}
-            <li class="break-words">
-              <span class="font-mono font-semibold text-gray-700">{{ step.name }}</span>
-              <span class="font-mono">{{ step.arguments | truncate(200) }}</span>
-              <div class="mt-0.5 whitespace-pre-wrap text-gray-600">→ {{ step.result | truncate(300) }}</div>
-            </li>
-          {% endfor %}
-        </ol>
+    {# Its thinking and tool calls, as they looked while it ran; a step is a tool call #}
+    {% if briefing.transcript.length > 0 %}
+      <details class="border-t border-gray-100" x-data="briefingTranscript" data-briefing-id="{{ briefing.id }}">
+        <summary class="px-4 py-3 text-xs text-gray-500 cursor-pointer select-none">
+          What it did{% if briefing.stepCount > 0 %} · {{ briefing.stepCount }} {{ 'step' if briefing.stepCount == 1 else 'steps' }}{% endif %}
+        </summary>
+
+        <div class="px-4 py-4 space-y-4 bg-gray-50 rounded-b-lg">
+          <template x-for="(message, index) in messages" :key="index">
+            <div x-show="message.role !== 'assistant' || message.content !== '' || message.reasoning !== ''">
+              {% include 'partials/runMessages' %}
+            </div>
+          </template>
+        </div>
       </details>
     {% endif %}
   {% endmacro %}
@@ -107,15 +192,40 @@
 
     <div class="space-y-6">
       {% if isRunning %}
-        <div x-data="briefingStatus" class="flex flex-wrap items-center gap-3 p-4 text-sm rounded-lg border border-sky-200 bg-sky-50 text-sky-800" role="status">
-          <span class="icon-loading inline-block size-5 shrink-0 bg-current" aria-hidden="true"></span>
-          <span class="flex-1 min-w-48">Briefing now: Rook is looking over your memories, tasks and recent chats. This page updates when it's done.</span>
+        <section x-data="briefingRun" class="bg-white rounded-lg shadow-sm">
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200">
+            <span class="icon-loading inline-block size-5 shrink-0 bg-current text-sky-600" aria-hidden="true"></span>
 
-          <form method="post" action="/briefing/cancel" x-data="{ cancelling: false }" @submit="cancelling = true">
-            <button type="submit" class="px-3 py-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-              :disabled="cancelling" x-text="cancelling ? 'Cancelling…' : 'Cancel briefing'">Cancel briefing</button>
-          </form>
-        </div>
+            <div class="flex-1 min-w-48">
+              <h2 class="font-bold">Briefing now</h2>
+              <p class="mt-0.5 text-xs text-gray-500">Rook is looking over your memories, tasks and recent chats. This page updates when it's done.</p>
+            </div>
+
+            <form method="post" action="/briefing/cancel" x-data="{ cancelling: false }" @submit="cancelling = true">
+              <button type="submit" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                :disabled="cancelling" x-text="cancelling ? 'Cancelling…' : 'Cancel briefing'">Cancel briefing</button>
+            </form>
+          </div>
+
+          {# Its replies and tool calls as they come, scrolling within the card #}
+          <div x-ref="messages" class="max-h-[60vh] overflow-y-auto px-4 py-4 bg-gray-50 rounded-b-lg">
+            <div class="space-y-4">
+              <template x-for="(message, index) in messages" :key="index">
+                {# A reply that only called a tool, without saying anything, isn't shown; the tool's row is #}
+                <div x-show="message.role !== 'assistant' || message.content !== '' || message.reasoning !== ''">
+                  {% include 'partials/runMessages' %}
+                </div>
+              </template>
+
+              {# Waiting on the model: reading what it's given, thinking, or after a tool's result #}
+              <div x-cloak x-show="isWaiting()" class="flex justify-start">
+                <div class="px-4 py-2.5 rounded-2xl bg-white shadow-sm">
+                  <span class="icon-loading block size-5 bg-current text-gray-400" aria-label="Waiting for the model"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       {% endif %}
 
       {% if latest %}

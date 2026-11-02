@@ -5,6 +5,7 @@ import images from '../../services/images.js'
 import settings from '../../services/settings.js'
 import tools from '../../ai-tools/index.js'
 import runs from '../../services/runs.js'
+import { readModelReply } from '../../services/modelStream.js'
 import { watchRunResponse } from '../../lib/watchRunResponse.js'
 import { maxCallsPerTool, maxRounds, describeCallLimit } from '../../ai-tools/limits.js'
 import config from '../../configure.js'
@@ -176,116 +177,6 @@ const readAttachedImages = function (dataUrls) {
   return { buffers }
 }
 
-// One line of Lemonade's stream => its parsed event, or null for blank lines and "data: [DONE]"
-const parseStreamLine = function (line) {
-  const trimmed = line.trim()
-
-  if (trimmed.startsWith(`data:`) === false) {
-    return null
-  }
-
-  const data = trimmed.slice(5).trim()
-
-  if (data === `[DONE]`) {
-    return null
-  }
-
-  return JSON.parse(data)
-}
-
-// Tool calls arrive in pieces: the first carries the id and name, later ones add to the arguments text
-const addToolCallPart = function (toolCalls, part) {
-  let call = toolCalls[part.index]
-
-  if (call == null) {
-    call = { id: ``, type: `function`, function: { name: ``, arguments: `` } }
-    toolCalls[part.index] = call
-  }
-
-  if (part.id) {
-    call.id = part.id
-  }
-
-  if (part.function?.name) {
-    call.function.name = part.function.name
-  }
-
-  if (part.function?.arguments) {
-    call.function.arguments += part.function.arguments
-  }
-}
-
-// Reads one streamed reply from the model, passing its text on to the browser as it arrives.
-// Returns what it said and the tools it asked for. `finished` is false when the stream was cut
-// short, by the user stopping it or by an error.
-const readModelReply = async function ({ upstream, sendEvent, abort }) {
-  const reader = upstream.body.getReader()
-  const decoder = new TextDecoder()
-
-  let buffer = ``
-  let content = ``
-  let reasoning = ``
-  let finished = false
-  const toolCalls = []
-
-  try {
-    while (true) {
-      const { value, done } = await reader.read()
-
-      if (done) {
-        finished = true
-        break
-      }
-
-      buffer += decoder.decode(value, { stream: true })
-
-      const lines = buffer.split(`\n`)
-      // The last piece may be half a line; keep it for the next chunk
-      buffer = lines.pop()
-
-      for (const line of lines) {
-        const event = parseStreamLine(line)
-        const delta = event?.choices?.[0]?.delta
-
-        if (delta == null) {
-          continue
-        }
-
-        // Thinking models send their reasoning separately from the answer
-        if (delta.reasoning_content) {
-          reasoning += delta.reasoning_content
-          sendEvent({ type: `reasoning`, text: delta.reasoning_content })
-        }
-
-        if (delta.content) {
-          content += delta.content
-          sendEvent({ type: `content`, text: delta.content })
-        }
-
-        if (delta.tool_calls) {
-          for (const part of delta.tool_calls) {
-            addToolCallPart(toolCalls, part)
-          }
-        }
-      }
-    }
-  } catch (err) {
-    const weAborted = abort.signal.aborted === true
-
-    if (weAborted === false) {
-      console.error(`Lemonade stream failed`, err)
-      sendEvent({ type: `error`, message: `The reply failed: ${err.message}` })
-    }
-  }
-
-  // Indexes can skip numbers; keep only the calls that arrived
-  const completeToolCalls = toolCalls.filter(function (call) {
-    return call != null
-  })
-
-  return { content, reasoning, toolCalls: completeToolCalls, finished }
-}
-
 // Runs the tools the model asked for and saves each result. Every call gets a result, even when
 // it isn't run, since the model expects an answer to each call it made. With `skipReason`, no
 // call is run and that's the result of each. `callCounts` holds how many times each tool has been
@@ -296,14 +187,10 @@ const runToolCalls = async function ({ toolCalls, chat, chatTools, history, send
     const callCount = (callCounts[name] ?? 0) + 1
     callCounts[name] = callCount
     const argumentsText = call.function.arguments
-    const prompt = tools.readImagePrompt(argumentsText)
-    const url = tools.readToolUrl(argumentsText)
-    const query = tools.readSearchQuery(argumentsText)
-    const memory = tools.readMemoryContent(argumentsText)
-    const taskTitle = tools.readTaskTitle(argumentsText)
-    const channel = tools.readSlackChannel(argumentsText)
+    // What the page shows for the call: an image's prompt, a page's URL, a search's query, and so on
+    const details = tools.readCallDetails(argumentsText)
 
-    sendEvent({ type: `toolCall`, toolCallId: call.id, name, prompt, url, query, memory, taskTitle, channel })
+    sendEvent({ type: `toolCall`, toolCallId: call.id, name, ...details })
 
     let result = null
 
@@ -334,8 +221,8 @@ const runToolCalls = async function ({ toolCalls, chat, chatTools, history, send
 
     sendEvent({ type: `toolResult`, toolCallId: call.id, content: result.content, imageId: result.imageId })
 
-    if (result.imageId != null && prompt != null) {
-      titleNotes.push(`(Created an image of: ${prompt})`)
+    if (result.imageId != null && details.prompt != null) {
+      titleNotes.push(`(Created an image of: ${details.prompt})`)
     }
   }
 
@@ -404,7 +291,7 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
 
       sendEvent({ type: `assistant` })
 
-      const reply = await readModelReply({ upstream, sendEvent, abort })
+      const reply = await readModelReply({ upstream, sendEvent, signal: abort.signal })
       upstream = null
 
       // Tool calls cut off part way have incomplete arguments, so they aren't run

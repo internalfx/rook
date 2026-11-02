@@ -46,6 +46,20 @@ export const readSlackChannel = function (argumentsText) {
   return readArgument(argumentsText, `channel`)
 }
 
+// What chats and briefings show for a tool call, besides its name: an image's prompt, a page's
+// URL, a search's query, a memory's text, a task's title or a Slack conversation. Each is null
+// when the call doesn't have it.
+export const readCallDetails = function (argumentsText) {
+  return {
+    prompt: readImagePrompt(argumentsText),
+    url: readToolUrl(argumentsText),
+    query: readSearchQuery(argumentsText),
+    memory: readMemoryContent(argumentsText),
+    taskTitle: readTaskTitle(argumentsText),
+    channel: readSlackChannel(argumentsText),
+  }
+}
+
 export default {
   parseArguments,
   readImagePrompt,
@@ -54,4 +68,5 @@ export default {
   readTaskTitle,
   readMemoryContent,
   readSlackChannel,
+  readCallDetails,
 }

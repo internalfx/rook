@@ -171,44 +171,6 @@ export const streamChat = async function ({ model, messages, tools = [], signal 
   return response
 }
 
-// A chat completion that isn't streamed, for work nobody watches live (briefings). Returns the
-// model's message: { content, tool_calls }. It has slowRequestLimit, which covers loading the
-// model; pass `signal` to cancel. `tools` are OpenAI-style function definitions.
-export const completeChat = async function ({ model, messages, tools = [], signal }) {
-  const url = `${config.lemonade.host}/api/v1/chat/completions`
-
-  const payload = {
-    model,
-    messages,
-    stream: false,
-  }
-
-  if (tools.length > 0) {
-    payload.tools = tools
-  }
-
-  const response = await fetch(url, {
-    method: `POST`,
-    headers: getHeaders(),
-    body: JSON.stringify(payload),
-    signal: AbortSignal.any([signal, AbortSignal.timeout(slowRequestLimit)]),
-    timeout: false,
-  })
-
-  if (response.ok === false) {
-    throw await failure(`chat`, response)
-  }
-
-  const body = await response.json()
-  const message = body.choices?.[0]?.message
-
-  if (message == null) {
-    throw new Error(`Lemonade chat response had no message`)
-  }
-
-  return message
-}
-
 const titleTimeout = 1000 * 60
 const titleSourceLimit = 2000
 
@@ -353,7 +315,6 @@ export default {
   listEmbeddingModels,
   modelSeesImages,
   streamChat,
-  completeChat,
   writeTitle,
   generateImage,
   embed,

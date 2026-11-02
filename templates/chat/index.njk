@@ -3,43 +3,11 @@
 {% block mainClass %}relative flex overflow-hidden{% endblock %}
 
 {% block head %}
-<script src="/static/marked.min.js"></script>
-<script src="/static/purify.min.js"></script>
+{% include 'partials/runMessagesScript' %}
 <script>
-  // Links in replies open in a new tab, so following one doesn't leave the chat
-  DOMPurify.addHook(`afterSanitizeAttributes`, function (node) {
-    if (node.tagName === `A`) {
-      node.setAttribute(`target`, `_blank`)
-      node.setAttribute(`rel`, `noopener noreferrer`)
-    }
-  })
-
   document.addEventListener(`alpine:init`, () => {
     // False when no usable chat model is chosen in Settings
     const canSend = {{ 'true' if modelProblem == null else 'false' }}
-
-    // The memory, task and Slack tools share one kind of row: what it says while the tool runs and
-    // once it's done, and its icon
-    const toolRows = {
-      save_memory: { pending: `Remembering`, done: `Remembered`, icon: `icon-memories` },
-      search_memories: { pending: `Searching memories`, done: `Searched memories`, icon: `icon-memories` },
-      update_memory: { pending: `Updating a memory`, done: `Updated a memory`, icon: `icon-memories` },
-      delete_memory: { pending: `Forgetting a memory`, done: `Forgot a memory`, icon: `icon-memories` },
-      add_task: { pending: `Adding a task`, done: `Added a task`, icon: `icon-tasks` },
-      find_tasks: { pending: `Searching tasks`, done: `Searched tasks`, icon: `icon-tasks` },
-      update_task: { pending: `Updating a task`, done: `Updated a task`, icon: `icon-tasks` },
-      complete_task: { pending: `Completing a task`, done: `Completed a task`, icon: `icon-tasks` },
-      read_slack: { pending: `Reading Slack`, done: `Read Slack`, icon: `icon-slack` },
-      search_slack: { pending: `Searching Slack`, done: `Searched Slack`, icon: `icon-slack` },
-    }
-
-    // The math tools' rows show their one-line result, so there's nothing to expand
-    const resultRows = {
-      calculate: { pending: `Calculating`, done: `Calculated`, icon: `icon-calculator` },
-      days_between: { pending: `Counting days`, done: `Counted days`, icon: `icon-calendar` },
-      add_to_date: { pending: `Working out a date`, done: `Worked out a date`, icon: `icon-calendar` },
-      find_weekday: { pending: `Finding the day`, done: `Found the day`, icon: `icon-calendar` },
-    }
 
     // Attached images are shrunk to this on their long side and sent as JPEG, keeping uploads
     // small and what each costs the model low. A message carries up to maxImages (as
@@ -49,6 +17,8 @@
     const maxImages = 4
 
     Alpine.data(`chat`, () => ({
+      // How replies and tool calls are drawn (see partials/runMessagesScript)
+      ...runMessages,
       // Exposed so the Send button's :disabled expression can read it
       canSend,
       chatId: null,
@@ -288,52 +258,11 @@
         return distanceFromBottom < 80
       },
 
-      // A reply's Markdown => HTML that's safe to put in the page. Replies can repeat what the
-      // model read on web pages, so anything like a script or a javascript: link is removed.
-      // Single line breaks are kept, as the model means them.
-      renderMarkdown (text) {
-        const html = marked.parse(text, { gfm: true, breaks: true })
-        return DOMPurify.sanitize(html)
-      },
-
       scrollToBottom () {
         this.$nextTick(() => {
           const el = this.$refs.messages
           el.scrollTop = el.scrollHeight
         })
-      },
-
-      hasToolRow (message) {
-        return message.role === `tool` && toolRows[message.name] != null
-      },
-
-      // "Remembered" or "Remembering", and so on, for a memory or task tool's row
-      toolRowLabel (message) {
-        const row = toolRows[message.name]
-        return message.pending ? row.pending : row.done
-      },
-
-      toolRowIcon (message) {
-        return message.pending ? `icon-loading` : toolRows[message.name].icon
-      },
-
-      // What the row shows after its label: the memory's text, the task's title, the query or the
-      // Slack conversation
-      toolRowText (message) {
-        return message.memory ?? message.taskTitle ?? message.query ?? message.channel
-      },
-
-      hasResultRow (message) {
-        return message.role === `tool` && resultRows[message.name] != null
-      },
-
-      resultRowLabel (message) {
-        const row = resultRows[message.name]
-        return message.pending ? row.pending : row.done
-      },
-
-      resultRowIcon (message) {
-        return message.pending ? `icon-loading` : resultRows[message.name].icon
       },
 
       lastMessage () {
@@ -458,38 +387,15 @@
         }
 
         const event = JSON.parse(trimmed.slice(5))
-        const last = this.lastMessage()
 
-        if (event.type === `assistant`) {
-          this.messages.push({ role: `assistant`, content: ``, reasoning: `` })
-        } else if (event.type === `reasoning` && last?.role === `assistant`) {
-          last.reasoning += event.text
-        } else if (event.type === `content` && last?.role === `assistant`) {
-          last.content += event.text
-        } else if (event.type === `toolCall`) {
-          this.messages.push({
-            role: `tool`,
-            toolCallId: event.toolCallId,
-            name: event.name,
-            prompt: event.prompt,
-            url: event.url,
-            query: event.query,
-            memory: event.memory,
-            taskTitle: event.taskTitle,
-            channel: event.channel,
-            imageId: null,
-            content: ``,
-            pending: true,
-          })
-        } else if (event.type === `toolResult`) {
-          const toolMessage = this.messages.find((message) => message.toolCallId === event.toolCallId)
+        // The reply's text and tool calls (see partials/runMessagesScript); the rest is the chat's
+        const applied = runMessages.applyRunEvent(this.messages, event)
 
-          if (toolMessage != null) {
-            toolMessage.pending = false
-            toolMessage.imageId = event.imageId
-            toolMessage.content = event.content
-          }
-        } else if (event.type === `title`) {
+        if (applied) {
+          return
+        }
+
+        if (event.type === `title`) {
           this.setChatTitle(chatId, event.title)
         } else if (event.type === `error`) {
           this.error = event.message
@@ -663,18 +569,7 @@
               </div>
             </template>
 
-            <template x-if="message.role === 'assistant'">
-              <div class="flex justify-start">
-                <div class="max-w-[85%] px-4 py-2.5 text-sm rounded-2xl bg-white text-gray-900 shadow-sm">
-                  <details x-show="message.reasoning !== ''" class="text-xs text-gray-500" :class="{ 'mb-2': message.content !== '' }">
-                    <summary class="cursor-pointer select-none">Thinking</summary>
-                    <div class="mt-1 whitespace-pre-wrap break-words" x-text="message.reasoning"></div>
-                  </details>
-
-                  <div x-show="message.content !== ''" class="markdown break-words" x-html="renderMarkdown(message.content)"></div>
-                </div>
-              </div>
-            </template>
+            {% include 'partials/runMessages' %}
 
             {# An image tool's result: the image it made, its progress, or what went wrong #}
             <template x-if="message.role === 'tool' && message.name === 'generate_image'">
@@ -739,32 +634,6 @@
                     <span x-show="message.name === 'convert_time'" x-text="message.pending ? 'Converting the time' : 'Converted the time'"></span>
                   </summary>
                   <div x-show="!message.pending" class="mt-2 whitespace-pre-wrap break-words text-gray-700" x-text="message.content"></div>
-                </details>
-              </div>
-            </template>
-
-            {# A sum or date the model worked out, with the answer it got #}
-            <template x-if="hasResultRow(message)">
-              <div class="flex justify-start">
-                <div class="max-w-[85%] min-w-0 flex items-start gap-2 px-4 py-2.5 text-xs text-gray-500 bg-white rounded-2xl shadow-sm">
-                  <span class="inline-block size-4 shrink-0 bg-current" :class="resultRowIcon(message)" aria-hidden="true"></span>
-                  <span class="shrink-0" x-text="resultRowLabel(message)"></span>
-                  <span x-show="!message.pending" class="min-w-0 break-words text-gray-700" x-text="message.content"></span>
-                </div>
-              </div>
-            </template>
-
-            {# A memory or task saved, searched for, changed or completed, or Slack read or searched: its text, title, query or
-               conversation, and the result when expanded #}
-            <template x-if="hasToolRow(message)">
-              <div class="flex justify-start">
-                <details class="max-w-[85%] min-w-0 px-4 py-2.5 text-xs text-gray-500 bg-white rounded-2xl shadow-sm">
-                  <summary class="flex items-center gap-2 cursor-pointer select-none">
-                    <span class="inline-block size-4 shrink-0 bg-current" :class="toolRowIcon(message)" aria-hidden="true"></span>
-                    <span class="shrink-0" x-text="toolRowLabel(message)"></span>
-                    <span x-show="toolRowText(message)" class="min-w-0 truncate text-gray-700" x-text="toolRowText(message)"></span>
-                  </summary>
-                  <div x-show="!message.pending" class="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap break-words text-gray-700" x-text="message.content"></div>
                 </details>
               </div>
             </template>

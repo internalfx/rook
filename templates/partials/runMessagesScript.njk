@@ -1,0 +1,136 @@
+{# How chats and briefings draw the model's replies and its tool calls (with partials/runMessages),
+   for the <head> of a page that shows them. A page's Alpine component takes these with
+   ...runMessages, and feeds the events of a reply in progress to applyRunEvent. #}
+<script src="/static/marked.min.js"></script>
+<script src="/static/purify.min.js"></script>
+<script>
+  // Links in replies open in a new tab, so following one doesn't leave the page
+  DOMPurify.addHook(`afterSanitizeAttributes`, function (node) {
+    if (node.tagName === `A`) {
+      node.setAttribute(`target`, `_blank`)
+      node.setAttribute(`rel`, `noopener noreferrer`)
+    }
+  })
+
+  // The memory, task, Slack and notification tools share one kind of row: what it says while the
+  // tool runs and once it's done, and its icon
+  const toolRows = {
+    save_memory: { pending: `Remembering`, done: `Remembered`, icon: `icon-memories` },
+    search_memories: { pending: `Searching memories`, done: `Searched memories`, icon: `icon-memories` },
+    update_memory: { pending: `Updating a memory`, done: `Updated a memory`, icon: `icon-memories` },
+    delete_memory: { pending: `Forgetting a memory`, done: `Forgot a memory`, icon: `icon-memories` },
+    add_task: { pending: `Adding a task`, done: `Added a task`, icon: `icon-tasks` },
+    find_tasks: { pending: `Searching tasks`, done: `Searched tasks`, icon: `icon-tasks` },
+    update_task: { pending: `Updating a task`, done: `Updated a task`, icon: `icon-tasks` },
+    complete_task: { pending: `Completing a task`, done: `Completed a task`, icon: `icon-tasks` },
+    read_slack: { pending: `Reading Slack`, done: `Read Slack`, icon: `icon-slack` },
+    search_slack: { pending: `Searching Slack`, done: `Searched Slack`, icon: `icon-slack` },
+    notify_user: { pending: `Notifying you`, done: `Notified you`, icon: `icon-bell` },
+  }
+
+  // The math tools' rows show their one-line result, so there's nothing to expand
+  const resultRows = {
+    calculate: { pending: `Calculating`, done: `Calculated`, icon: `icon-calculator` },
+    days_between: { pending: `Counting days`, done: `Counted days`, icon: `icon-calendar` },
+    add_to_date: { pending: `Working out a date`, done: `Worked out a date`, icon: `icon-calendar` },
+    find_weekday: { pending: `Finding the day`, done: `Found the day`, icon: `icon-calendar` },
+  }
+
+  window.runMessages = {
+    // A reply's Markdown => HTML that's safe to put in the page. Replies can repeat what the
+    // model read on web pages, so anything like a script or a javascript: link is removed.
+    // Single line breaks are kept, as the model means them.
+    renderMarkdown (text) {
+      const html = marked.parse(text, { gfm: true, breaks: true })
+      return DOMPurify.sanitize(html)
+    },
+
+    hasToolRow (message) {
+      return message.role === `tool` && toolRows[message.name] != null
+    },
+
+    // "Remembered" or "Remembering", and so on, for a memory, task, Slack or notification row
+    toolRowLabel (message) {
+      const row = toolRows[message.name]
+      return message.pending ? row.pending : row.done
+    },
+
+    toolRowIcon (message) {
+      return message.pending ? `icon-loading` : toolRows[message.name].icon
+    },
+
+    // What the row shows after its label: the memory's text, the task's (or notification's)
+    // title, the query or the Slack conversation
+    toolRowText (message) {
+      return message.memory ?? message.taskTitle ?? message.query ?? message.channel
+    },
+
+    hasResultRow (message) {
+      return message.role === `tool` && resultRows[message.name] != null
+    },
+
+    resultRowLabel (message) {
+      const row = resultRows[message.name]
+      return message.pending ? row.pending : row.done
+    },
+
+    resultRowIcon (message) {
+      return message.pending ? `icon-loading` : resultRows[message.name].icon
+    },
+
+    // Applies one of rook's events for a reply in progress (see runConversation in
+    // routes/chat/send.js) to `messages`, the page's list. Pass the component's own list, which
+    // Alpine watches, so streamed text shows up as it arrives. Returns false for an event it
+    // doesn't handle, which is the page's to handle.
+    applyRunEvent (messages, event) {
+      const last = messages[messages.length - 1]
+
+      if (event.type === `assistant`) {
+        messages.push({ role: `assistant`, content: ``, reasoning: `` })
+        return true
+      }
+
+      if (event.type === `reasoning` && last?.role === `assistant`) {
+        last.reasoning += event.text
+        return true
+      }
+
+      if (event.type === `content` && last?.role === `assistant`) {
+        last.content += event.text
+        return true
+      }
+
+      if (event.type === `toolCall`) {
+        messages.push({
+          role: `tool`,
+          toolCallId: event.toolCallId,
+          name: event.name,
+          prompt: event.prompt,
+          url: event.url,
+          query: event.query,
+          memory: event.memory,
+          taskTitle: event.taskTitle,
+          channel: event.channel,
+          imageId: null,
+          content: ``,
+          pending: true,
+        })
+        return true
+      }
+
+      if (event.type === `toolResult`) {
+        const toolMessage = messages.find((message) => message.toolCallId === event.toolCallId)
+
+        if (toolMessage != null) {
+          toolMessage.pending = false
+          toolMessage.imageId = event.imageId
+          toolMessage.content = event.content
+        }
+
+        return true
+      }
+
+      return false
+    },
+  }
+</script>
