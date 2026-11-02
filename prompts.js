@@ -15,6 +15,14 @@ export const chat = {
 
   // Said for the user in front of a chat the model started, from a briefing suggestion
   briefingOpener: `(You started this conversation from my briefing.)`,
+
+  // In place of an image the user attached, when it isn't sent: it's older than the most recent
+  // few, or the chat model can't see images
+  olderImage: `(The user attached an image here earlier; it's no longer shown to you.)`,
+  unseenImage: `(The user attached an image here, which you can't see.)`,
+
+  // The text of a message that's only images, for writing the chat's title
+  imageOnlyMessage: `(The user sent an image.)`,
 }
 
 export const memories = {

@@ -1,6 +1,7 @@
 import joi from '../../services/joi.js'
 import lemonade from '../../services/lemonade.js'
 import chats from '../../services/chats.js'
+import images from '../../services/images.js'
 import settings from '../../services/settings.js'
 import tools from '../../ai-tools/index.js'
 import runs from '../../services/runs.js'
@@ -16,6 +17,18 @@ import prompts from '../../prompts.js'
 // the model only. Some models' chat templates refuse a conversation that doesn't start with the
 // user.
 const briefingOpener = prompts.chat.briefingOpener
+
+// The most images one message can carry, and the most the model is shown at once: those in the
+// latest messages. Older ones become a line saying they were there, so a long chat with photos
+// stays fast and within the model's context.
+const maxImagesPerMessage = 4
+const maxSentImages = 4
+
+// An attached image's size, decoded; the chat page shrinks them well below this
+const maxImageBytes = 5 * 1024 * 1024
+
+// The chat page sends every image as a JPEG, whatever it was (see shrinkImage there)
+const jpegDataUrlStart = `data:image/jpeg;base64,`
 
 // What every chat starts with: the chat prompt, then the pinned memories. One system message,
 // since some models' chat templates only accept one, as briefings do. Null when both are empty.
@@ -40,9 +53,14 @@ const buildSystemMessage = function () {
   return { role: `system`, content: parts.join(`\n\n`) }
 }
 
-// Used when the model can't write a title: the start of the first message
+// Used when the model can't write a title: the start of the first message, or "Image" for one
+// that's only images
 const fallbackTitle = function (text) {
   const firstLine = text.trim().split(`\n`)[0]
+
+  if (firstLine === ``) {
+    return `Image`
+  }
 
   if (firstLine.length <= 60) {
     return firstLine
@@ -53,7 +71,7 @@ const fallbackTitle = function (text) {
 
 const createTitle = async function ({ model, userText, replyText }) {
   try {
-    const title = await lemonade.writeTitle({ model, userText, replyText })
+    const title = await lemonade.writeTitle({ model, userText: userText || prompts.chat.imageOnlyMessage, replyText })
     return title
   } catch (err) {
     console.error(err)
@@ -61,7 +79,8 @@ const createTitle = async function ({ model, userText, replyText }) {
   }
 }
 
-// A saved message => the OpenAI message format the model expects
+// A saved message => the OpenAI message format the model expects. A user message's images are
+// added by toModelHistory.
 const toModelMessage = function (message) {
   if (message.role === `tool`) {
     return { role: `tool`, tool_call_id: message.toolCallId, content: message.content }
@@ -72,6 +91,89 @@ const toModelMessage = function (message) {
   }
 
   return { role: message.role, content: message.content }
+}
+
+// A user message with images => its text, then each image: as an image part while it's in
+// `shownIds`, otherwise as a line saying it was there. Only text, when none is shown, for models
+// that don't take image parts.
+const toModelMessageWithImages = async function (message, { shownIds, seesImages }) {
+  const parts = []
+
+  if (message.content !== ``) {
+    parts.push({ type: `text`, text: message.content })
+  }
+
+  for (const id of message.imageIds) {
+    const dataUrl = shownIds.has(id) ? await images.readImageDataUrl(id) : null
+
+    if (dataUrl != null) {
+      parts.push({ type: `image_url`, image_url: { url: dataUrl } })
+    } else {
+      parts.push({ type: `text`, text: seesImages ? prompts.chat.olderImage : prompts.chat.unseenImage })
+    }
+  }
+
+  const hasImage = parts.some(function (part) {
+    return part.type === `image_url`
+  })
+
+  if (hasImage === false) {
+    const lines = parts.map(function (part) {
+      return part.text
+    })
+
+    return { role: `user`, content: lines.join(`\n`) }
+  }
+
+  return { role: `user`, content: parts }
+}
+
+// The saved conversation => what the model is sent. The maxSentImages most recent images go as
+// images, when the model can see; older ones, and all of them when it can't, as a line each.
+const toModelHistory = async function (savedMessages, { seesImages }) {
+  const imageIds = savedMessages.flatMap(function (message) {
+    return message.imageIds ?? []
+  })
+
+  const shownIds = new Set(seesImages ? imageIds.slice(Math.max(0, imageIds.length - maxSentImages)) : [])
+  const history = []
+
+  for (const message of savedMessages) {
+    if (message.role === `user` && message.imageIds != null) {
+      history.push(await toModelMessageWithImages(message, { shownIds, seesImages }))
+    } else {
+      history.push(toModelMessage(message))
+    }
+  }
+
+  return history
+}
+
+// The images sent with a message, as data URLs => their JPEG bytes. Returns { buffers }, or
+// { problem } saying what's wrong with one.
+const readAttachedImages = function (dataUrls) {
+  const buffers = []
+
+  for (const dataUrl of dataUrls) {
+    if (dataUrl.startsWith(jpegDataUrlStart) === false) {
+      return { problem: `Images must be sent as JPEG data URLs.` }
+    }
+
+    const buffer = Buffer.from(dataUrl.slice(jpegDataUrlStart.length), `base64`)
+    const isJpeg = buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff
+
+    if (isJpeg === false) {
+      return { problem: `An attached image isn't a JPEG.` }
+    }
+
+    if (buffer.length > maxImageBytes) {
+      return { problem: `An attached image is over ${maxImageBytes / 1024 / 1024} MB.` }
+    }
+
+    buffers.push(buffer)
+  }
+
+  return { buffers }
 }
 
 // One line of Lemonade's stream => its parsed event, or null for blank lines and "data: [DONE]"
@@ -368,20 +470,34 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
   }
 }
 
-// Sends one message in a chat, starts the reply running on the server (see runConversation)
-// and streams it back. Without a chatId, a new chat is created; its id is returned in the
-// X-Chat-Id header. The history comes from the database, and the Lemonade API key never leaves
-// the server.
+// Sends one message in a chat, with up to maxImagesPerMessage images (JPEG data URLs), starts
+// the reply running on the server (see runConversation) and streams it back. Without a chatId,
+// a new chat is created; its id is returned in the X-Chat-Id header. The history comes from the
+// database, and the Lemonade API key never leaves the server.
 export const POST = async function (ctx) {
   let args
 
   try {
     args = await joi.object({
       chatId: joi.string(),
-      content: joi.string().trim().required(),
+      content: joi.string().trim(),
+      images: joi.array().items(joi.string()).max(maxImagesPerMessage).default([]),
     }).validateAsync(ctx.request.body)
   } catch (err) {
     ctx.throw(400, err.message)
+  }
+
+  // An empty message comes through as null; it's fine with images
+  const text = args.content ?? ``
+
+  if (text === `` && args.images.length === 0) {
+    ctx.throw(400, `Write a message or attach an image.`)
+  }
+
+  const { buffers, problem } = readAttachedImages(args.images)
+
+  if (problem != null) {
+    ctx.throw(400, problem)
   }
 
   // Every chat uses the models and tools in Settings as they are now
@@ -393,7 +509,7 @@ export const POST = async function (ctx) {
   }
 
   let chat = null
-  let history = []
+  let savedMessages = []
 
   if (args.chatId != null) {
     chat = chats.getChat(args.chatId)
@@ -406,23 +522,49 @@ export const POST = async function (ctx) {
       ctx.throw(409, `This chat is still replying.`)
     }
 
-    const savedMessages = chats.getMessages(chat.id)
-    history = savedMessages.map(toModelMessage)
+    savedMessages = chats.getMessages(chat.id)
   }
 
-  history.push({ role: `user`, content: args.content })
+  // Lemonade is only asked whether the model can see when there are images to show it
+  const hasImages = buffers.length > 0 || savedMessages.some(function (message) {
+    return message.imageIds != null
+  })
+
+  let seesImages = false
+
+  if (hasImages) {
+    try {
+      seesImages = await lemonade.modelSeesImages(model)
+    } catch (err) {
+      // Without new images the chat carries on, its images as lines of text
+      if (buffers.length > 0) {
+        ctx.throw(502, `Couldn't check whether the chat model can see images: ${err.message}`)
+      }
+    }
+  }
+
+  if (buffers.length > 0 && seesImages === false) {
+    ctx.throw(400, `This chat model can't see images. Choose one that can in Settings.`)
+  }
 
   if (chat == null) {
     chat = chats.createChat()
   }
 
-  chats.addMessage({ chatId: chat.id, role: `user`, content: args.content })
+  const imageIds = []
+
+  for (const buffer of buffers) {
+    imageIds.push(await images.saveUpload(buffer))
+  }
+
+  chats.addMessage({ chatId: chat.id, role: `user`, content: text, imageIds })
   chats.touchChat(chat.id)
 
   // Everything up to and including this message is saved; the run's events draw the rest
+  const history = await toModelHistory(chats.getMessages(chat.id), { seesImages })
   const run = runs.startRun({ chatId: chat.id, baseCount: history.length })
 
-  runConversation({ history, chat, model, chatTools, userText: args.content, run })
+  runConversation({ history, chat, model, chatTools, userText: text, run })
 
   ctx.set(`X-Chat-Id`, chat.id)
   watchRunResponse(ctx, run)

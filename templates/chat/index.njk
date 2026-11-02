@@ -39,6 +39,13 @@
       find_weekday: { pending: `Finding the day`, done: `Found the day`, icon: `icon-calendar` },
     }
 
+    // Attached images are shrunk to this on their long side and sent as JPEG, keeping uploads
+    // small and what each costs the model low. A message carries up to maxImages (as
+    // routes/chat/send.js allows).
+    const maxImageSide = 1600
+    const jpegQuality = 0.85
+    const maxImages = 4
+
     Alpine.data(`chat`, () => ({
       // Exposed so the Send button's :disabled expression can read it
       canSend,
@@ -46,6 +53,12 @@
       chats: [],
       messages: [],
       input: ``,
+      // Whether the chat model can see images, so they can be attached
+      seesImages: false,
+      // Images waiting to go with the next message, as JPEG data URLs (see shrinkImage)
+      attachments: [],
+      // Why an image wasn't attached
+      attachError: null,
       sending: false,
       error: null,
       abort: null,
@@ -61,6 +74,7 @@
         this.chatId = data.chat?.id ?? null
         this.chats = data.chats
         this.messages = data.messages
+        this.seesImages = data.seesImages === true
 
         this.scrollToBottom()
         this.$refs.input.focus()
@@ -168,6 +182,95 @@
         }
       },
 
+      // An image file => a JPEG data URL at most maxImageSide on its long side, the right way up
+      // (phones record which way they were held). Throws when the browser can't read it, e.g. an
+      // iPhone's HEIC photo outside Safari.
+      async shrinkImage (file) {
+        const bitmap = await createImageBitmap(file, { imageOrientation: `from-image` })
+        const scale = Math.min(1, maxImageSide / Math.max(bitmap.width, bitmap.height))
+        const canvas = document.createElement(`canvas`)
+
+        canvas.width = Math.round(bitmap.width * scale)
+        canvas.height = Math.round(bitmap.height * scale)
+
+        // JPEG has no transparency, so a transparent PNG goes on white rather than black
+        const context = canvas.getContext(`2d`)
+        context.fillStyle = `#fff`
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+        bitmap.close()
+
+        return canvas.toDataURL(`image/jpeg`, jpegQuality)
+      },
+
+      // Adds image files to the next message, up to maxImages; anything else is ignored
+      async attachFiles (files) {
+        if (this.seesImages === false) {
+          return
+        }
+
+        this.attachError = null
+
+        const imageFiles = [...files].filter((file) => file.type.startsWith(`image/`))
+
+        for (const file of imageFiles) {
+          if (this.attachments.length >= maxImages) {
+            this.attachError = `A message can carry up to ${maxImages} images.`
+            break
+          }
+
+          try {
+            this.attachments.push(await this.shrinkImage(file))
+          } catch (err) {
+            this.attachError = `${file.name} couldn't be read. Try a JPEG or PNG.`
+          }
+        }
+      },
+
+      removeAttachment (index) {
+        this.attachments.splice(index, 1)
+        this.attachError = null
+      },
+
+      // Pasting an image, like a screenshot, attaches it. Text pasted along with it (some apps
+      // copy both) still goes in the box.
+      onPaste (event) {
+        const files = [...(event.clipboardData?.files ?? [])]
+
+        if (this.seesImages === false || files.some((file) => file.type.startsWith(`image/`)) === false) {
+          return
+        }
+
+        if (event.clipboardData.getData(`text/plain`) === ``) {
+          event.preventDefault()
+        }
+
+        this.attachFiles(files)
+      },
+
+      // Dropping files on the conversation attaches them; dragged text is left alone
+      onDragOver (event) {
+        if (event.dataTransfer.types.includes(`Files`)) {
+          event.preventDefault()
+        }
+      },
+
+      onDrop (event) {
+        if (event.dataTransfer.files.length > 0) {
+          event.preventDefault()
+          this.attachFiles(event.dataTransfer.files)
+        }
+      },
+
+      // A user message's images: as saved, or the data URLs it was sent with until the page reloads
+      userImages (message) {
+        if (message.imageUrls != null) {
+          return message.imageUrls
+        }
+
+        return (message.imageIds ?? []).map((id) => `/images/${id}`)
+      },
+
       // Grows the message box to fit its text, up to its max height (then it scrolls)
       resizeInput () {
         const el = this.$refs.input
@@ -256,14 +359,17 @@
 
       async send () {
         const text = this.input.trim()
+        const images = [...this.attachments]
 
-        if (text === `` || this.sending === true || canSend === false) {
+        if ((text === `` && images.length === 0) || this.sending === true || canSend === false) {
           return
         }
 
         this.error = null
         this.input = ``
-        this.messages.push({ role: `user`, content: text, reasoning: `` })
+        this.attachments = []
+        this.attachError = null
+        this.messages.push({ role: `user`, content: text, reasoning: ``, imageUrls: images })
 
         const controller = new AbortController()
         this.abort = controller
@@ -274,7 +380,7 @@
           const response = await fetch(`/chat/send`, {
             method: `POST`,
             headers: { 'Content-Type': `application/json` },
-            body: JSON.stringify({ chatId: this.chatId, content: text }),
+            body: JSON.stringify({ chatId: this.chatId, content: text, images }),
             signal: controller.signal,
           })
 
@@ -284,6 +390,7 @@
             // Nothing was saved, so take the message back out and put it in the box to retry
             this.messages.splice(-1, 1)
             this.input = text
+            this.attachments = images
 
             throw new Error(errorText || `Request failed (${response.status})`)
           }
@@ -439,7 +546,8 @@
     </nav>
   </aside>
 
-  <div class="flex flex-col flex-1 min-w-0">
+  {# Image files dropped anywhere on the conversation are attached to the next message #}
+  <div class="flex flex-col flex-1 min-w-0" @dragover="onDragOver($event)" @drop="onDrop($event)">
     <div class="shrink-0 flex flex-wrap items-center gap-3 px-4 py-3 bg-white border-b border-gray-200">
       <button type="button" class="md:hidden -ml-1 p-1.5 rounded-md text-gray-600 hover:bg-gray-100" aria-label="Show chats" @click="listOpen = true">
         <span class="icon-chats block size-5 bg-current" aria-hidden="true"></span>
@@ -522,9 +630,18 @@
         <template x-for="(message, index) in messages" :key="index">
           {# A reply that only called a tool, without saying anything, isn't shown; the tool's result is #}
           <div x-show="message.role !== 'assistant' || message.content !== '' || message.reasoning !== ''">
+            {# The images the user attached go above their text. Once saved, each opens full size;
+               before that it's a data URL, which browsers won't open in a tab. #}
             <template x-if="message.role === 'user'">
-              <div class="flex justify-end">
-                <div class="max-w-[85%] px-4 py-2.5 text-sm rounded-2xl bg-sky-600 text-white whitespace-pre-wrap break-words" x-text="message.content"></div>
+              <div class="flex flex-col items-end gap-1.5">
+                <div x-show="userImages(message).length > 0" class="max-w-[85%] flex flex-wrap justify-end gap-1.5">
+                  <template x-for="(src, imageIndex) in userImages(message)" :key="imageIndex">
+                    <a :href="src.startsWith('/images/') ? src : null" target="_blank" title="Open full size">
+                      <img :src="src" alt="Attached image" class="h-32 max-w-full rounded-xl border border-gray-200 object-cover">
+                    </a>
+                  </template>
+                </div>
+                <div x-show="message.content !== ''" class="max-w-[85%] px-4 py-2.5 text-sm rounded-2xl bg-sky-600 text-white whitespace-pre-wrap break-words" x-text="message.content"></div>
               </div>
             </template>
 
@@ -647,23 +764,47 @@
     </div>
 
     <form class="shrink-0 px-4 py-3 bg-white border-t border-gray-200" @submit.prevent="send()">
-      <div class="mx-auto max-w-3xl flex items-end gap-2">
-        <label class="sr-only" for="chat-input">Message</label>
-        <textarea id="chat-input" x-ref="input" x-model="input" @keydown="onKeydown($event)" rows="2"
-          placeholder="Message {{ config.appName }}… (Shift+Enter to send)"
-          class="flex-1 max-h-60 resize-none p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"
-          {% if modelProblem %}disabled{% endif %}></textarea>
+      <div class="mx-auto max-w-3xl">
+        {# The images going with the next message, each with a button to take it off #}
+        <div x-cloak x-show="attachments.length > 0 || attachError" class="mb-2 flex flex-wrap items-center gap-2">
+          <template x-for="(src, index) in attachments" :key="index">
+            <div class="relative">
+              <img :src="src" alt="Image to send" class="size-16 rounded-lg border border-gray-200 object-cover">
+              <button type="button" @click="removeAttachment(index)" aria-label="Remove image"
+                class="absolute -top-1.5 -right-1.5 flex size-5 items-center justify-center rounded-full bg-gray-700 text-white hover:bg-gray-900">
+                <span class="icon-close inline-block size-3 bg-current" aria-hidden="true"></span>
+              </button>
+            </div>
+          </template>
+          <p x-show="attachError" class="text-xs text-red-700" role="alert" x-text="attachError"></p>
+        </div>
 
-        <button type="submit" x-show="!sending" :disabled="input.trim() === '' || canSend === false"
-          class="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg disabled:opacity-50 disabled:hover:bg-sky-500">
-          <span class="icon-send inline-block size-4 bg-current" aria-hidden="true"></span>
-          Send
-        </button>
-        <button type="button" x-cloak x-show="sending" @click="stop()"
-          class="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-gray-700 hover:bg-gray-800 rounded-lg">
-          <span class="icon-stop inline-block size-4 bg-current" aria-hidden="true"></span>
-          Stop
-        </button>
+        <div class="flex items-end gap-2">
+          {# Only while the chat model can see images. On phones it offers the camera too. #}
+          <input type="file" x-ref="fileInput" accept="image/*" multiple class="hidden"
+            @change="attachFiles($event.target.files); $event.target.value = ''">
+          <button type="button" x-cloak x-show="seesImages" @click="$refs.fileInput.click()" :disabled="canSend === false"
+            class="p-2 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 disabled:opacity-50" aria-label="Attach images" title="Attach images">
+            <span class="icon-image-plus block size-5 bg-current" aria-hidden="true"></span>
+          </button>
+
+          <label class="sr-only" for="chat-input">Message</label>
+          <textarea id="chat-input" x-ref="input" x-model="input" @keydown="onKeydown($event)" @paste="onPaste($event)" rows="2"
+            placeholder="Message {{ config.appName }}… (Shift+Enter to send)"
+            class="flex-1 max-h-60 resize-none p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"
+            {% if modelProblem %}disabled{% endif %}></textarea>
+
+          <button type="submit" x-show="!sending" :disabled="(input.trim() === '' && attachments.length === 0) || canSend === false"
+            class="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg disabled:opacity-50 disabled:hover:bg-sky-500">
+            <span class="icon-send inline-block size-4 bg-current" aria-hidden="true"></span>
+            Send
+          </button>
+          <button type="button" x-cloak x-show="sending" @click="stop()"
+            class="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-gray-700 hover:bg-gray-800 rounded-lg">
+            <span class="icon-stop inline-block size-4 bg-current" aria-hidden="true"></span>
+            Stop
+          </button>
+        </div>
       </div>
     </form>
   </div>

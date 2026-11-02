@@ -254,20 +254,32 @@ const describeTasks = function () {
   return text
 }
 
+// "(with 2 images)", for a message the user attached images to; briefings aren't shown them
+const describeAttachedImages = function (message) {
+  const count = message.imageIds?.length ?? 0
+
+  if (count === 0) {
+    return ``
+  }
+
+  return `(with ${count === 1 ? `an image` : `${count} images`})`
+}
+
 // A chat's title and its last few messages; tool calls and their results are left out
 const describeChat = function (chat) {
   const savedMessages = chats.getMessages(chat.id)
 
   const textMessages = savedMessages.filter(function (message) {
     const isConversation = message.role === `user` || message.role === `assistant`
-    return isConversation && message.content.trim() !== ``
+    return isConversation && (message.content.trim() !== `` || message.imageIds != null)
   })
 
   const lastMessages = textMessages.slice(-messagesPerChat)
 
   const lines = lastMessages.map(function (message) {
     const speaker = message.role === `user` ? `User` : `You`
-    return `${speaker}: ${shorten(message.content)}`
+    const text = [shorten(message.content), describeAttachedImages(message)].filter((part) => part !== ``)
+    return `${speaker}: ${text.join(` `)}`
   })
 
   return `### ${chat.title ?? `Untitled chat`} (last active ${formatDay(chat.updatedAt)})\n${lines.join(`\n`)}`

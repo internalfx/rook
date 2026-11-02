@@ -17,15 +17,16 @@ const updateChatTitle = db.query(`UPDATE chats SET title = $title WHERE id = $id
 const deleteChatRow = db.query(`DELETE FROM chats WHERE id = $id`)
 
 const selectMessages = db.query(`
-  SELECT role, content, reasoning, toolCalls, toolCallId, imageId
+  SELECT role, content, reasoning, toolCalls, toolCallId, imageId, imageIds
   FROM chatMessages WHERE chatId = $chatId ORDER BY id
 `)
 const insertMessage = db.query(`
-  INSERT INTO chatMessages (chatId, role, content, reasoning, toolCalls, toolCallId, imageId, createdAt)
-  VALUES ($chatId, $role, $content, $reasoning, $toolCalls, $toolCallId, $imageId, $now)
+  INSERT INTO chatMessages (chatId, role, content, reasoning, toolCalls, toolCallId, imageId, imageIds, createdAt)
+  VALUES ($chatId, $role, $content, $reasoning, $toolCalls, $toolCallId, $imageId, $imageIds, $now)
 `)
 const selectImageIds = db.query(`
-  SELECT imageId FROM chatMessages WHERE chatId = $chatId AND imageId IS NOT NULL
+  SELECT imageId, imageIds FROM chatMessages
+  WHERE chatId = $chatId AND (imageId IS NOT NULL OR imageIds IS NOT NULL)
 `)
 
 export const listChats = function () {
@@ -41,18 +42,24 @@ export const listChatsSince = function (since, limit) {
   return selectChatsSince.all({ since, limit })
 }
 
-// toolCalls comes back parsed: an array in the OpenAI format, or null
+// toolCalls comes back parsed: an array in the OpenAI format, or null. So does imageIds: the ids
+// of the images the user attached, or null.
 export const getMessages = function (chatId) {
   const rows = selectMessages.all({ chatId })
 
   const messages = rows.map(function (row) {
     let toolCalls = null
+    let imageIds = null
 
     if (row.toolCalls != null) {
       toolCalls = JSON.parse(row.toolCalls)
     }
 
-    return { ...row, toolCalls }
+    if (row.imageIds != null) {
+      imageIds = JSON.parse(row.imageIds)
+    }
+
+    return { ...row, toolCalls, imageIds }
   })
 
   return messages
@@ -87,24 +94,33 @@ export const addMessage = function ({
   toolCalls = null,
   toolCallId = null,
   imageId = null,
+  imageIds = null,
 }) {
   const now = new Date().toISOString()
 
   let toolCallsText = null
+  let imageIdsText = null
 
   if (toolCalls != null) {
     toolCallsText = JSON.stringify(toolCalls)
   }
 
-  insertMessage.run({ chatId, role, content, reasoning, toolCalls: toolCallsText, toolCallId, imageId, now })
+  if (imageIds != null && imageIds.length > 0) {
+    imageIdsText = JSON.stringify(imageIds)
+  }
+
+  insertMessage.run({ chatId, role, content, reasoning, toolCalls: toolCallsText, toolCallId, imageId, imageIds: imageIdsText, now })
 }
 
-// Its messages go with it (ON DELETE CASCADE), and so do the image files they made
+// Its messages go with it (ON DELETE CASCADE), and so do the image files: those the model made
+// and those the user attached
 export const deleteChat = function (id) {
   const imageRows = selectImageIds.all({ chatId: id })
 
-  const imageIds = imageRows.map(function (row) {
-    return row.imageId
+  const imageIds = imageRows.flatMap(function (row) {
+    const ids = row.imageIds == null ? [] : JSON.parse(row.imageIds)
+
+    return row.imageId == null ? ids : [row.imageId, ...ids]
   })
 
   deleteChatRow.run({ id })

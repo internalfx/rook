@@ -1,6 +1,7 @@
 
 import config from '../configure.js'
 import prompts from '../prompts.js'
+import caches from './caches.js'
 
 // Lemonade Server: an OpenAI-compatible API for local models
 // https://lemonade-server.ai
@@ -102,6 +103,27 @@ export const listEmbeddingModels = async function () {
   })
 
   return embeddingModels
+}
+
+// Whether `model` can see images (Lemonade labels it "vision"). Remembered for a minute, so a
+// chat with images doesn't ask Lemonade on every message.
+export const modelSeesImages = async function (model) {
+  const key = `modelSeesImages:${model}`
+  const cached = caches.flash.get(key)
+
+  if (cached != null) {
+    return cached
+  }
+
+  const models = await listModels()
+  const found = models.find(function (candidate) {
+    return candidate.id === model
+  })
+  const seesImages = found != null && hasLabel(found, `vision`)
+
+  caches.flash.set(key, seesImages)
+
+  return seesImages
 }
 
 // Starts a streamed chat completion and returns the upstream Response, whose body is a
@@ -329,6 +351,7 @@ export default {
   listChatModels,
   listImageModels,
   listEmbeddingModels,
+  modelSeesImages,
   streamChat,
   completeChat,
   writeTitle,

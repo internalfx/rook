@@ -55,7 +55,9 @@ koa.use(async function (ctx, next) {
 
 koa.use(metaRouter)
 koa.use(midPerformance)
-koa.use(koaBody(config.koaBody))
+// A chat message can carry a few photos as data URLs (see routes/chat/send.js), beyond the
+// default 1 MB for JSON
+koa.use(koaBody({ jsonLimit: `10mb`, ...config.koaBody }))
 koa.use(midHttpError)
 koa.use(midSession)
 koa.use(midHelpers)
