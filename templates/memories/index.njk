@@ -1,13 +1,19 @@
 {% extends 'layouts/default' %}
 
 {% block body %}
-  {# A memory: its text, when it changed and the chat it came from. Edit swaps in a form; Delete asks first. #}
-  {% macro memoryItem(memory) %}
+  {# A memory: its text, when it changed and the chat it came from. Edit swaps in a form; Delete asks first.
+     `returnTo` is the page to come back to once it's saved or deleted, so a search stays open. In search
+     results, which mix them, `showPinned` labels the pinned ones. #}
+  {% macro memoryItem(memory, returnTo, showPinned = false) %}
     <div class="px-4 py-3" x-data="{ editing: false, confirmDelete: false }">
       <div x-show="!editing">
         <p class="text-sm whitespace-pre-wrap break-words">{{ memory.content }}</p>
 
         <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+          {% if showPinned and memory.pinned %}
+            <span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">Pinned</span>
+          {% endif %}
+
           {# Shown in the browser's own date format #}
           <span>Updated <time datetime="{{ memory.updatedAt }}" x-text="new Date($el.dateTime).toLocaleDateString()">{{ memory.updatedAt | truncate(10, true, '') }}</time></span>
 
@@ -24,6 +30,7 @@
 
           <form x-cloak x-show="confirmDelete" method="post" action="/memories/{{ memory.id }}/delete"
             class="flex items-center gap-2" @keydown.escape="confirmDelete = false">
+            <input type="hidden" name="returnTo" value="{{ returnTo }}">
             <span class="text-gray-600">Delete this memory?</span>
             <button type="submit" class="px-2 py-1 font-bold text-white bg-red-600 hover:bg-red-700 rounded">Delete</button>
             <button type="button" class="px-2 py-1 rounded hover:bg-gray-100" @click="confirmDelete = false">Cancel</button>
@@ -34,6 +41,7 @@
       {# Cancel puts the form back as it was #}
       <form x-cloak x-show="editing" x-ref="editForm" method="post" action="/memories/{{ memory.id }}/update" class="space-y-2"
         @keydown.escape="editing = false; $refs.editForm.reset()">
+        <input type="hidden" name="returnTo" value="{{ returnTo }}">
         <label class="sr-only" for="memory-{{ memory.id }}">Memory</label>
         <textarea id="memory-{{ memory.id }}" x-ref="content" name="content" rows="2" maxlength="2000" required
           class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">{{ memory.content }}</textarea>
@@ -51,7 +59,7 @@
   {% endmacro %}
 
   <h1 class="text-2xl font-bold">Memories</h1>
-  <p class="mt-1 mb-6 text-sm text-gray-500">What the chat model remembers for every chat. It saves, changes and deletes them as you talk, and you can too.</p>
+  <p class="mt-1 mb-6 text-sm text-gray-500">What Rook remembers for every chat. It saves, changes and deletes them as you talk, and you can too.</p>
 
   <div class="max-w-3xl space-y-6">
     {% if not isMemoriesOn %}
@@ -60,6 +68,16 @@
         <a href="/settings" class="px-3 py-1.5 font-bold rounded-md bg-white border border-amber-300 hover:bg-amber-100">Open Settings</a>
       </div>
     {% endif %}
+
+    {# Finds memories by meaning with the embedding model, as the chat model does #}
+    <form method="get" action="/memories" role="search" class="flex flex-wrap items-center gap-2 p-4 bg-white rounded-lg shadow-sm"
+      x-data="{ searching: false }" @submit="searching = true">
+      <label for="memory-search" class="sr-only">Search memories</label>
+      <input id="memory-search" type="search" name="q" value="{{ q }}" placeholder="Search by meaning, e.g. my dog's vet"
+        class="flex-1 min-w-48 p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+      <button type="submit" class="px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg disabled:opacity-50"
+        :disabled="searching" x-text="searching ? 'Searching…' : 'Search'">Search</button>
+    </form>
 
     <form method="post" action="/memories" class="p-4 space-y-2 bg-white rounded-lg shadow-sm">
       <label for="new-memory" class="block font-bold">Add a memory</label>
@@ -75,38 +93,62 @@
       </div>
     </form>
 
-    <section class="bg-white rounded-lg shadow-sm">
-      <div class="px-4 py-3 border-b border-gray-200">
-        <h2 class="font-bold">Pinned <span class="font-normal text-gray-500">· {{ pinned.length }}</span></h2>
-        <p class="mt-0.5 text-xs text-gray-500">Sent at the start of every chat. Keep these to what matters in almost every conversation.</p>
-      </div>
-
-      {% if pinned.length == 0 %}
-        <p class="px-4 py-3 text-sm text-gray-500">No pinned memories.</p>
-      {% else %}
-        <div class="divide-y divide-gray-100">
-          {% for memory in pinned %}
-            {{ memoryItem(memory) }}
-          {% endfor %}
+    {% if q %}
+      <section class="bg-white rounded-lg shadow-sm">
+        <div class="flex flex-wrap items-start gap-3 px-4 py-3 border-b border-gray-200">
+          <div class="flex-1 min-w-0">
+            <h2 class="font-bold break-words">Closest to “{{ q }}”</h2>
+            <p class="mt-0.5 text-xs text-gray-500">Found by meaning, closest first. Pinned memories are included.</p>
+          </div>
+          <a href="/memories" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50">Clear</a>
         </div>
-      {% endif %}
-    </section>
 
-    <section class="bg-white rounded-lg shadow-sm">
-      <div class="px-4 py-3 border-b border-gray-200">
-        <h2 class="font-bold">Searchable <span class="font-normal text-gray-500">· {{ searchable.length }}</span></h2>
-        <p class="mt-0.5 text-xs text-gray-500">Found by meaning when the chat model searches its memories.</p>
-      </div>
-
-      {% if searchable.length == 0 %}
-        <p class="px-4 py-3 text-sm text-gray-500">No searchable memories.</p>
-      {% else %}
-        <div class="divide-y divide-gray-100">
-          {% for memory in searchable %}
-            {{ memoryItem(memory) }}
-          {% endfor %}
+        {% if searchError %}
+          <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">{{ searchError }}</div>
+        {% elif results.length == 0 %}
+          <p class="px-4 py-3 text-sm text-gray-500">There are no memories to search.</p>
+        {% else %}
+          <div class="divide-y divide-gray-100">
+            {% for memory in results %}
+              {{ memoryItem(memory, returnTo, true) }}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </section>
+    {% else %}
+      <section class="bg-white rounded-lg shadow-sm">
+        <div class="px-4 py-3 border-b border-gray-200">
+          <h2 class="font-bold">Pinned <span class="font-normal text-gray-500">· {{ pinned.length }}</span></h2>
+          <p class="mt-0.5 text-xs text-gray-500">Sent at the start of every chat. Keep these to what matters in almost every conversation.</p>
         </div>
-      {% endif %}
-    </section>
+
+        {% if pinned.length == 0 %}
+          <p class="px-4 py-3 text-sm text-gray-500">No pinned memories.</p>
+        {% else %}
+          <div class="divide-y divide-gray-100">
+            {% for memory in pinned %}
+              {{ memoryItem(memory, returnTo) }}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </section>
+
+      <section class="bg-white rounded-lg shadow-sm">
+        <div class="px-4 py-3 border-b border-gray-200">
+          <h2 class="font-bold">Searchable <span class="font-normal text-gray-500">· {{ searchable.length }}</span></h2>
+          <p class="mt-0.5 text-xs text-gray-500">Found by meaning when the chat model searches its memories.</p>
+        </div>
+
+        {% if searchable.length == 0 %}
+          <p class="px-4 py-3 text-sm text-gray-500">No searchable memories.</p>
+        {% else %}
+          <div class="divide-y divide-gray-100">
+            {% for memory in searchable %}
+              {{ memoryItem(memory, returnTo) }}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </section>
+    {% endif %}
   </div>
 {% endblock body %}

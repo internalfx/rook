@@ -3,9 +3,9 @@ import db from './db.js'
 import { rankByMeaning } from './embeddings.js'
 
 // Memories are facts kept for every chat. Pinned ones are sent at the start of every chat; the
-// rest are found by meaning with search(). Writing a memory never calls Lemonade: its vector is
-// made when it's next searched (see services/embeddings.js), so the memories page works while
-// Lemonade is down.
+// rest are found by meaning with search(), and all of them by the Memories page's searchAll().
+// Writing a memory never calls Lemonade: its vector is made when it's next searched (see
+// services/embeddings.js), so the memories page works while Lemonade is down.
 
 const memoryColumns = `memories.id, memories.content, memories.pinned, memories.chatId, memories.createdAt, memories.updatedAt`
 
@@ -23,6 +23,12 @@ const selectRecentSearchable = db.query(`
 const selectSearchable = db.query(`
   SELECT ${memoryColumns}, memories.embedding, memories.embeddingModel
   FROM memories WHERE pinned = 0
+`)
+// Every memory, pinned ones too, with the title of the chat it was saved in, for the Memories
+// page's search
+const selectAllForSearch = db.query(`
+  SELECT ${memoryColumns}, chats.title AS chatTitle, memories.embedding, memories.embeddingModel
+  FROM memories LEFT JOIN chats ON chats.id = memories.chatId
 `)
 const insertMemory = db.query(`
   INSERT INTO memories (id, content, pinned, chatId, createdAt, updatedAt)
@@ -102,12 +108,10 @@ export const deleteMemory = function (id) {
   deleteMemoryRow.run({ id })
 }
 
-// The searchable (not pinned) memories closest in meaning to `query`, closest first, each with
-// its similarity as `score`. Memories without a vector from `model` (new, edited, unpinned, or
-// made with another model) are embedded first, in the same request as the query.
-export const search = async function ({ query, model, limit = 5, signal }) {
-  const rows = selectSearchable.all()
-
+// `rows` closest in meaning to `query`, closest first, up to `limit`, each with its similarity
+// as `score`. Memories without a vector from `model` (new, edited, or made with another model)
+// are embedded first, in the same request as the query, and their vectors saved.
+const rankMemories = async function ({ rows, query, model, limit, signal }) {
   const ranked = await rankByMeaning({
     rows,
     query,
@@ -130,6 +134,20 @@ export const search = async function ({ query, model, limit = 5, signal }) {
   return closest
 }
 
+// The searchable (not pinned) memories closest in meaning to `query`, for the chat model, which
+// has the pinned ones already
+export const search = async function ({ query, model, limit = 5, signal }) {
+  const rows = selectSearchable.all()
+  return rankMemories({ rows, query, model, limit, signal })
+}
+
+// Every memory, pinned ones too, closest in meaning to `query`, for the Memories page's search.
+// Each has the title of the chat it was saved in (chatTitle), if any.
+export const searchAll = async function ({ query, model, limit, signal }) {
+  const rows = selectAllForSearch.all()
+  return rankMemories({ rows, query, model, limit, signal })
+}
+
 export default {
   listMemories,
   getMemory,
@@ -140,4 +158,5 @@ export default {
   updateMemory,
   deleteMemory,
   search,
+  searchAll,
 }

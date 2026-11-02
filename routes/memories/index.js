@@ -2,7 +2,34 @@ import joi from '../../services/joi.js'
 import memories from '../../services/memories.js'
 import tools from '../../ai-tools/index.js'
 
+// How many memories a search shows, closest first, and how long it may take: the first search
+// with a new embedding model embeds every memory
+const searchLimit = 10
+const searchTimeout = 1000 * 60 * 2
+
+// The memories, pinned and searchable. With ?q=, the memories closest in meaning to it instead,
+// pinned ones too, found with the embedding model as the chat model finds them.
 export const GET = async function (ctx) {
+  const q = typeof ctx.query.q === `string` ? ctx.query.q.trim() : ``
+
+  let results = null
+  let searchError = null
+
+  if (q !== ``) {
+    const model = tools.getEmbeddingModel()
+
+    if (model == null) {
+      searchError = `Searching by meaning needs an embedding model; choose one in Settings.`
+    } else {
+      try {
+        results = await memories.searchAll({ query: q, model, limit: searchLimit, signal: AbortSignal.timeout(searchTimeout) })
+      } catch (err) {
+        console.error(err)
+        searchError = `Couldn't search: ${err.message}`
+      }
+    }
+  }
+
   const allMemories = memories.listMemories()
 
   const pinned = allMemories.filter(function (memory) {
@@ -13,10 +40,17 @@ export const GET = async function (ctx) {
     return memory.pinned === false
   })
 
+  // Where editing or deleting a memory comes back to, so a search stays open
+  const returnTo = q === `` ? `/memories` : `/memories?q=${encodeURIComponent(q)}`
+
   ctx.body = ctx.nunjucks(`memories/index`, {
     pinned,
     searchable,
     isMemoriesOn: tools.isMemoriesOn(),
+    q,
+    results,
+    searchError,
+    returnTo,
   })
 }
 
