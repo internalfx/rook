@@ -12,20 +12,18 @@ import { maxCallsPerTool, maxRounds, describeCallLimit } from '../ai-tools/limit
 import prompts from '../prompts.js'
 
 // A briefing runs the chat model in the background, with no one watching: it looks over the
-// memories, tasks and recent chats, and what earlier briefings said, tidies the memories and
-// tasks, and suggests things to talk about. Each suggestion is the message the model would open a
-// conversation with; Discuss on the Briefing page starts a chat with it. For something that
-// matters now, it can notify the user (services/notifications.js). Briefings run on a schedule
-// (see runIfDue) or when asked for.
+// memories, tasks and recent chats, and what the previous briefing said, tidies the memories and
+// tasks, and writes the user a short overview. Discuss on the Briefing page starts a chat with
+// that overview as the model's first message. For something that matters now, it can notify the
+// user (services/notifications.js). Briefings run on a schedule (see runIfDue) or when asked for.
 //
 // The running briefing lives in memory, like chat replies (services/runs.js), so restarting the
 // server ends it.
 
-// How many suggestions and notifications one briefing can make
-const maxSuggestions = 2
+// How many notifications one briefing can send
 const maxNotifications = 2
 
-// Older briefings are deleted, with their suggestions
+// Older briefings are deleted
 const keptBriefings = 5
 
 // What the model is shown
@@ -38,12 +36,9 @@ const doneTaskLookBack = 1000 * 60 * 60 * 24 * 7
 const doneTaskLimit = 20
 const messagesPerChat = 10
 const messageCharLimit = 600
-const suggestionCharLimit = 300
 
-// How far back it sees the notifications sent and the suggestions made, besides the previous
-// briefing's, so it doesn't repeat one from a few briefings ago
+// How far back it sees the notifications sent, so it doesn't repeat one from a few briefings ago
 const notificationLookBack = 1000 * 60 * 60 * 24 * 14
-const suggestionLookBack = 1000 * 60 * 60 * 24 * 7
 const historyLimit = 20
 
 // How far back the first briefing looks for chats; later ones look back to the last briefing
@@ -73,6 +68,7 @@ const failStaleBriefings = db.query(`
 const selectFinished = db.query(`
   SELECT * FROM briefings WHERE status != 'running' ORDER BY startedAt DESC LIMIT $limit OFFSET $offset
 `)
+const selectBriefing = db.query(`SELECT * FROM briefings WHERE id = $id`)
 const selectLastDone = db.query(`SELECT startedAt FROM briefings WHERE status = 'done' ORDER BY startedAt DESC LIMIT 1`)
 const selectPreviousDone = db.query(`SELECT * FROM briefings WHERE status = 'done' ORDER BY startedAt DESC LIMIT 1`)
 const selectLastStarted = db.query(`SELECT startedAt FROM briefings ORDER BY startedAt DESC LIMIT 1`)
@@ -80,28 +76,6 @@ const deleteOldBriefings = db.query(`
   DELETE FROM briefings WHERE id NOT IN (SELECT id FROM briefings ORDER BY startedAt DESC LIMIT $keep)
 `)
 
-const insertSuggestion = db.query(`
-  INSERT INTO briefingSuggestions (id, briefingId, title, message, createdAt)
-  VALUES ($id, $briefingId, $title, $message, $now)
-`)
-const selectSuggestionsFor = db.query(`
-  SELECT * FROM briefingSuggestions WHERE briefingId = $briefingId ORDER BY createdAt, rowid
-`)
-const selectSuggestion = db.query(`SELECT * FROM briefingSuggestions WHERE id = $id`)
-const updateSuggestionChat = db.query(`
-  UPDATE briefingSuggestions SET chatId = $chatId, discussedAt = COALESCE(discussedAt, $now) WHERE id = $id
-`)
-const updateSuggestionDismissed = db.query(`UPDATE briefingSuggestions SET dismissedAt = $now WHERE id = $id`)
-// The suggestions made since `since` by finished briefings other than `excludeId` (null for none)
-const selectSuggestionsSince = db.query(`
-  SELECT briefingSuggestions.*
-  FROM briefingSuggestions JOIN briefings ON briefings.id = briefingSuggestions.briefingId
-  WHERE briefingSuggestions.createdAt > $since
-    AND briefings.status != 'running'
-    AND ($excludeId IS NULL OR briefingSuggestions.briefingId != $excludeId)
-  ORDER BY briefingSuggestions.createdAt DESC, briefingSuggestions.rowid DESC
-  LIMIT $limit
-`)
 const selectLastFinishedAt = db.query(`SELECT MAX(finishedAt) AS finishedAt FROM briefings WHERE status != 'running'`)
 
 // A briefing still marked running was cut off by a restart
@@ -113,30 +87,6 @@ let current = null
 
 // What a cancelled briefing's error says, after "This briefing didn't finish:"
 const cancelledError = `You cancelled it.`
-
-const instructions = prompts.briefing.instructions({ maxSuggestions })
-
-const addSuggestionTool = {
-  type: `function`,
-  function: {
-    name: `add_suggestion`,
-    description: prompts.tools.add_suggestion.description,
-    parameters: {
-      type: `object`,
-      properties: {
-        title: {
-          type: `string`,
-          description: prompts.tools.add_suggestion.parameters.title,
-        },
-        message: {
-          type: `string`,
-          description: prompts.tools.add_suggestion.parameters.message,
-        },
-      },
-      required: [`title`, `message`],
-    },
-  },
-}
 
 const notifyUserTool = {
   type: `function`,
@@ -185,19 +135,6 @@ const shorten = function (text, limit = messageCharLimit) {
   }
 
   return `${trimmed.slice(0, limit)}…`
-}
-
-// What the user did with a suggestion
-const describeSuggestionState = function (suggestion) {
-  if (suggestion.discussedAt != null) {
-    return `discussed`
-  }
-
-  if (suggestion.dismissedAt != null) {
-    return `dismissed`
-  }
-
-  return `not looked at yet`
 }
 
 // The searchable memories it can tidy, with their ids. Pinned ones are in the system message.
@@ -289,32 +226,15 @@ const describeChat = function (chat) {
   return `### ${chat.title ?? `Untitled chat`} (last active ${formatDay(chat.updatedAt)})\n${lines.join(`\n`)}`
 }
 
-// The last briefing that finished: its overview, and its suggestions with what the user did with
-// each. Returns the section's text and the briefing (or null), so the earlier suggestions can
-// leave its own out.
+// The last briefing that finished, and what it told the user
 const describePreviousBriefing = function () {
-  const row = selectPreviousDone.get()
+  const previous = selectPreviousDone.get()
 
-  if (row == null) {
-    return { text: `There hasn't been a briefing before this one.`, previous: null }
+  if (previous == null) {
+    return `There hasn't been a briefing before this one.`
   }
 
-  const previous = toBriefing(row)
-  const parts = [`From ${describeWhen(previous.startedAt)}.`]
-
-  parts.push(`Overview: ${previous.overview ?? `(none)`}`)
-
-  if (previous.suggestions.length === 0) {
-    parts.push(`It made no suggestions.`)
-  } else {
-    const lines = previous.suggestions.map(function (suggestion) {
-      return `- "${suggestion.title}" (${describeSuggestionState(suggestion)}): ${shorten(suggestion.message, suggestionCharLimit)}`
-    })
-
-    parts.push(`Its suggestions, and what the user did with them:\n${lines.join(`\n`)}`)
-  }
-
-  return { text: parts.join(`\n\n`), previous }
+  return `From ${describeWhen(previous.startedAt)}.\n\nOverview: ${previous.overview ?? `(none)`}`
 }
 
 // Every notification from the last two weeks, whichever briefing sent it
@@ -331,25 +251,6 @@ const describeRecentNotifications = function () {
   })
 
   return `Newest first (up to ${historyLimit}):\n${lines.join(`\n`)}`
-}
-
-// The past week's suggestions from briefings before the previous one, one line each; null when
-// there are none
-const describeEarlierSuggestions = function (previous) {
-  const since = new Date(Date.now() - suggestionLookBack).toISOString()
-  const excludeId = previous == null ? null : previous.id
-
-  const earlier = selectSuggestionsSince.all({ since, excludeId, limit: historyLimit })
-
-  if (earlier.length === 0) {
-    return null
-  }
-
-  const lines = earlier.map(function (suggestion) {
-    return `- ${describeWhen(suggestion.createdAt, true)}: "${suggestion.title}" (${describeSuggestionState(suggestion)})`
-  })
-
-  return `From briefings before your previous one, in the last 7 days, newest first (up to ${historyLimit}):\n${lines.join(`\n`)}`
 }
 
 // The chats since the last briefing that finished, or from the past week before there was one
@@ -372,10 +273,10 @@ const describeRecentChats = function () {
 const buildSystemMessage = function () {
   const memoriesMessage = tools.buildMemoriesMessage()
 
-  let content = instructions
+  let content = prompts.briefing.instructions
 
   if (memoriesMessage != null) {
-    content = `${instructions}\n\n${memoriesMessage.content}`
+    content = `${content}\n\n${memoriesMessage.content}`
   }
 
   return { role: `system`, content }
@@ -383,50 +284,16 @@ const buildSystemMessage = function () {
 
 // What rook tells the model about the state of things, as the user's message
 const buildContext = function () {
-  const { text: previousText, previous } = describePreviousBriefing()
-  const earlierSuggestions = describeEarlierSuggestions(previous)
-
   const sections = [
     tools.describeCurrentTime(),
     `## Memories\n\n${describeMemories()}`,
     `## Tasks\n\n${describeTasks()}`,
-    `## Your previous briefing\n\n${previousText}`,
+    `## Your previous briefing\n\n${describePreviousBriefing()}`,
     `## Notifications you've sent recently\n\n${describeRecentNotifications()}`,
+    `## Recent chats\n\n${describeRecentChats()}`,
   ]
 
-  if (earlierSuggestions != null) {
-    sections.push(`## Earlier suggestions\n\n${earlierSuggestions}`)
-  }
-
-  sections.push(`## Recent chats\n\n${describeRecentChats()}`)
-
   return sections.join(`\n\n`)
-}
-
-const addSuggestion = function ({ argumentsText, briefingId, state }) {
-  if (state.suggestionCount >= maxSuggestions) {
-    return `Not added: a briefing has at most ${maxSuggestions} suggestions.`
-  }
-
-  let args = null
-
-  try {
-    args = JSON.parse(argumentsText)
-  } catch (err) {}
-
-  args = args ?? {}
-
-  const title = typeof args.title === `string` ? args.title.trim().slice(0, 80) : ``
-  const message = typeof args.message === `string` ? args.message.trim() : ``
-
-  if (title === `` || message === ``) {
-    return `Not added: a suggestion needs a title and a message.`
-  }
-
-  insertSuggestion.run({ id: cuid(), briefingId, title, message, now: new Date().toISOString() })
-  state.suggestionCount += 1
-
-  return `Added suggestion ${state.suggestionCount} of at most ${maxSuggestions}: ${title}`
 }
 
 const notifyUser = async function ({ argumentsText, briefingId, state }) {
@@ -480,10 +347,6 @@ const runBriefingTool = async function ({ call, briefingId, briefingTools, callC
     return describeCallLimit(name, `briefing`)
   }
 
-  if (name === `add_suggestion`) {
-    return addSuggestion({ argumentsText, briefingId, state })
-  }
-
   if (name === `notify_user`) {
     return notifyUser({ argumentsText, briefingId, state })
   }
@@ -512,7 +375,7 @@ const runBriefing = async function ({ briefingId, state, signal }) {
     }
   }
 
-  const definitions = [...tools.getToolDefinitions(briefingTools), addSuggestionTool, notifyUserTool]
+  const definitions = [...tools.getToolDefinitions(briefingTools), notifyUserTool]
 
   const messages = [buildSystemMessage(), { role: `user`, content: buildContext() }]
 
@@ -549,7 +412,7 @@ const runBriefing = async function ({ briefingId, state, signal }) {
 
 // Runs the briefing and saves how it went. It never throws: a failure is saved on the briefing.
 const executeBriefing = async function (briefing) {
-  const state = { steps: [], suggestionCount: 0, notificationCount: 0 }
+  const state = { steps: [], notificationCount: 0 }
 
   let status = `done`
   let overview = null
@@ -601,7 +464,7 @@ export const startBriefing = function ({ startedBy }) {
 }
 
 // Stops the running briefing, if there is one, and waits until it's saved. It's saved as failed,
-// keeping what it did before then: its steps, and the suggestions and notifications it made.
+// keeping what it did before then: its steps, and the notifications it sent.
 export const cancelBriefing = async function () {
   const briefing = current
 
@@ -665,11 +528,20 @@ export const runIfDue = function () {
   startBriefing({ startedBy: `schedule` })
 }
 
-// steps comes back parsed, and each briefing has its suggestions
+// steps comes back parsed
 const toBriefing = function (row) {
-  const suggestions = selectSuggestionsFor.all({ briefingId: row.id })
+  return { ...row, steps: JSON.parse(row.steps) }
+}
 
-  return { ...row, steps: JSON.parse(row.steps), suggestions }
+// A briefing by id, or null
+export const getBriefing = function (id) {
+  const row = selectBriefing.get({ id })
+
+  if (row == null) {
+    return null
+  }
+
+  return toBriefing(row)
 }
 
 // The most recent briefing that has finished (done or failed), or null
@@ -687,19 +559,6 @@ export const getLatest = function () {
 export const listEarlier = function (limit) {
   const rows = selectFinished.all({ limit, offset: 1 })
   return rows.map(toBriefing)
-}
-
-export const getSuggestion = function (id) {
-  return selectSuggestion.get({ id }) ?? null
-}
-
-// `chatId` is the chat Discuss opened for it
-export const markDiscussed = function (id, chatId) {
-  updateSuggestionChat.run({ id, chatId, now: new Date().toISOString() })
-}
-
-export const dismissSuggestion = function (id) {
-  updateSuggestionDismissed.run({ id, now: new Date().toISOString() })
 }
 
 // Called when the Briefing page is shown, so its nav item stops saying there's something new
@@ -737,9 +596,7 @@ export default {
   runIfDue,
   getLatest,
   listEarlier,
-  getSuggestion,
-  markDiscussed,
-  dismissSuggestion,
+  getBriefing,
   markViewed,
   hasUnseen,
 }

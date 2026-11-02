@@ -13,7 +13,7 @@ import prompts from '../../prompts.js'
 // Every round of a reply offers the same tools (changing them would change the prompt); see
 // ai-tools/limits.js for how many calls and rounds it gets.
 
-// Said for the user before a conversation the model started (from a briefing suggestion), for
+// Said for the user before a conversation the model started (from a briefing), for
 // the model only. Some models' chat templates refuse a conversation that doesn't start with the
 // user.
 const briefingOpener = prompts.chat.briefingOpener
@@ -378,7 +378,7 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
       if (upstream == null) {
         try {
           // Neither of these is saved: the system message, and the opener in front of a
-          // conversation the model started from a briefing suggestion
+          // conversation the model started from a briefing
           const startMessages = []
 
           if (systemMessage != null) {

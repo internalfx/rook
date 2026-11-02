@@ -1,25 +1,14 @@
 import dayjs from 'dayjs'
 import briefings from '../../services/briefings.js'
 
-// A briefing as the page shows it: when it ran, in words, and how many of its suggestions are
-// new (not yet discussed or dismissed) or dismissed
+// A briefing as the page shows it: when it ran, in words
 const toPageBriefing = function (briefing) {
   const started = dayjs(briefing.startedAt)
-
-  const newCount = briefing.suggestions.filter(function (suggestion) {
-    return suggestion.discussedAt == null && suggestion.dismissedAt == null
-  }).length
-
-  const dismissedCount = briefing.suggestions.filter(function (suggestion) {
-    return suggestion.dismissedAt != null
-  }).length
 
   return {
     ...briefing,
     when: started.format(`dddd D MMMM, h:mm A`),
     ago: started.fromNow(),
-    newCount,
-    dismissedCount,
   }
 }
 

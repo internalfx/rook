@@ -13,7 +13,7 @@ export const chat = {
   // Asks for a new chat's title, from the start of the conversation
   title: `Write a short title, at most 6 words, summarizing this conversation. Reply with only the title, no quotes or punctuation at the end.`,
 
-  // Said for the user in front of a chat the model started, from a briefing suggestion
+  // Said for the user in front of a chat the model started, from a briefing
   briefingOpener: `(You started this conversation from my briefing.)`,
 
   // In place of an image the user attached, when it isn't sent: it's older than the most recent
@@ -33,13 +33,13 @@ export const memories = {
 
 export const briefing = {
   // The system message of every briefing, with the pinned memories after it
-  instructions: ({ maxSuggestions }) => `You're preparing a short status update for the user. Look at what you know about them and what's been happening. Only suggest what's genuinely useful; none is fine. If memories are duplicated, out of date or contradict each other, fix them. If a recent chat shows the user has done a task, mark it done, with a completion note if the chat says how it went or why it no longer applies; if it shows something they need to do that isn't on their list, add it. Compare with your previous briefing and your recent history: don't repeat suggestions the user dismissed or already discussed unless something has changed, and use notify_user only for what's new or noteworthy, never for something you've already notified them about recently unless it has become more urgent. When you're done, reply with an short message, written to the user.`,
+  instructions: `You're preparing a short status update for the user. Look at what you know about them and what's been happening. If memories are duplicated, out of date or contradict each other, fix them. If a recent chat shows the user has done a task, mark it done, with a completion note if the chat says how it went or why it no longer applies; if it shows something they need to do that isn't on their list, add it. Use notify_user only for what's new or noteworthy, never for something you've already notified them about recently unless it has become more urgent. When you're done, reply with a short message, written to the user; they can start a chat from it.`,
 }
 
 // Each tool's description, and its parameters' descriptions, by tool name. These are what the
 // model reads to decide when to use a tool and what to give it. A parameter missing here has no
-// description (its choices are listed for the model instead). The briefing's own tools,
-// add_suggestion and notify_user, are at the end.
+// description (its choices are listed for the model instead). The briefing's own tool,
+// notify_user, is at the end.
 
 // Used by add_task and update_task. Their choices (high, normal, low) are listed for the model.
 const priorityHint = `Normal unless the user says it's urgent, important or can wait.`
@@ -175,15 +175,6 @@ export const tools = {
     parameters: {
       done: `false puts it back on the list. Defaults to true.`,
       note: `When marking it done, a short note: what was done, anything left over, or why it no longer applies. Leave it out to keep any note it has.`,
-    },
-  },
-
-  // Briefings only
-  add_suggestion: {
-    description: `Add a suggestion to the briefing: something to talk to the user about. They see its title on a card; if they choose to discuss it, a chat opens with your message first.`,
-    parameters: {
-      title: `A few words, e.g. "Biscuit's vet appointment".`,
-      message: `How you'd open the conversation, written to the user.`,
     },
   },
 
