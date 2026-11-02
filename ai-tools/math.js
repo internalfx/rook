@@ -66,6 +66,7 @@ const addToDateTool = {
         unit: {
           type: `string`,
           enum: calculator.dateUnits,
+          description: prompts.tools.add_to_date.parameters.unit,
         },
       },
       required: [`date`, `amount`, `unit`],

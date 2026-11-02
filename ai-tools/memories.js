@@ -68,7 +68,6 @@ const updateMemoryTool = {
       properties: {
         id: {
           type: `string`,
-          description: prompts.tools.update_memory.parameters.id,
         },
         content: {
           type: `string`,
@@ -94,7 +93,6 @@ const deleteMemoryTool = {
       properties: {
         id: {
           type: `string`,
-          description: prompts.tools.delete_memory.parameters.id,
         },
       },
       required: [`id`],

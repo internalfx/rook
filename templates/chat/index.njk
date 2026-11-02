@@ -26,7 +26,7 @@
       update_memory: { pending: `Updating a memory`, done: `Updated a memory`, icon: `icon-memories` },
       delete_memory: { pending: `Forgetting a memory`, done: `Forgot a memory`, icon: `icon-memories` },
       add_task: { pending: `Adding a task`, done: `Added a task`, icon: `icon-tasks` },
-      find_tasks: { pending: `Checking tasks`, done: `Checked tasks`, icon: `icon-tasks` },
+      find_tasks: { pending: `Seaching tasks`, done: `Searched tasks`, icon: `icon-tasks` },
       update_task: { pending: `Updating a task`, done: `Updated a task`, icon: `icon-tasks` },
       complete_task: { pending: `Completing a task`, done: `Completed a task`, icon: `icon-tasks` },
     }
@@ -593,13 +593,15 @@
               </div>
             </template>
 
-            {# The model checked the date and time: what it was told, when expanded #}
-            <template x-if="message.role === 'tool' && message.name === 'get_current_time'">
+            {# The model checked the date and time, or converted a time between zones: what it
+               was told, when expanded #}
+            <template x-if="message.role === 'tool' && (message.name === 'get_current_time' || message.name === 'convert_time')">
               <div class="flex justify-start">
                 <details class="max-w-[85%] min-w-0 px-4 py-2.5 text-xs text-gray-500 bg-white rounded-2xl shadow-sm">
                   <summary class="flex items-center gap-2 cursor-pointer select-none">
                     <span class="inline-block size-4 shrink-0 bg-current" :class="message.pending ? 'icon-loading' : 'icon-clock'" aria-hidden="true"></span>
-                    <span x-text="message.pending ? 'Checking the time' : 'Checked the time'"></span>
+                    <span x-show="message.name === 'get_current_time'" x-text="message.pending ? 'Checking the time' : 'Checked the time'"></span>
+                    <span x-show="message.name === 'convert_time'" x-text="message.pending ? 'Converting the time' : 'Converted the time'"></span>
                   </summary>
                   <div x-show="!message.pending" class="mt-2 whitespace-pre-wrap break-words text-gray-700" x-text="message.content"></div>
                 </details>

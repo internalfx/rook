@@ -34,51 +34,59 @@ export const briefing = {
 // description (its choices are listed for the model instead). The briefing's own tools,
 // add_suggestion and notify_user, are at the end.
 
-// Used by save_memory and update_memory
-const pinnedHint = `true only for things that matter in almost every conversation, like the user's name or how they like answers written; those are given to you at the start of every chat. false for everything else, which you find with search_memories when it's relevant.`
-
-// Used by add_task and update_task
-const priorityHint = `high, normal or low. Use normal unless the user says it's urgent, important or can wait.`
-const dueDateHint = `The day it's due, as YYYY-MM-DD. Work out dates like "Friday" with find_weekday and "in 3 weeks" with add_to_date; both count from today.`
+// Used by add_task and update_task. Their choices (high, normal, low) are listed for the model.
+const priorityHint = `Normal unless the user says it's urgent, important or can wait.`
+const dueDateHint = `YYYY-MM-DD. Work out "Friday" with find_weekday and "in 3 weeks" with add_to_date.`
 
 export const tools = {
   get_current_time: {
-    description: `Get the current date, time and time zone. Use it whenever the answer depends on today's date or the time: "today", "tomorrow" or "this week", how long until or since something, someone's age, or whether something has happened yet.`,
+    description: `Get the current date, time and the user's time zone. Use it whenever the answer depends on today's date or the time, e.g. "tomorrow", someone's age, or whether something has happened yet. For other time zones, use convert_time.`,
+  },
+
+  convert_time: {
+    description: `Convert a time between time zones, or get the time now somewhere else, instead of working out offsets yourself; it knows daylight saving. E.g. "time in Tokyo?", "3pm my time in London", "how far ahead is Sydney?". Name zones as IANA names (America/New_York) or cities they're named after (Tokyo); for other cities use their zone, e.g. Mumbai is Asia/Kolkata.`,
+    parameters: {
+      time: `YYYY-MM-DD HH:MM (24-hour), or HH:MM for today. Leave it out for now.`,
+      from_zone: `The zone that time is in. Leave it out for the user's.`,
+      to_zones: `The zones to convert to. Leave it out for the user's.`,
+    },
   },
 
   calculate: {
-    description: `Work out arithmetic exactly instead of in your head: totals, splits, tips, prices, percentages, averages. Give the whole sum as one expression, e.g. (84.50 * 1.15) / 3.`,
+    description: `Do arithmetic exactly instead of in your head: totals, splits, tips, percentages, averages. Give the whole sum as one expression, e.g. (84.50 * 1.15) / 3.`,
     parameters: {
-      expression: `The sum to work out. It can use + - * / ^ and parentheses; 15% means 0.15, so 15% * 84.50 is 15% of 84.50; and the functions sqrt(x), abs(x), floor(x), ceil(x), round(x, places), mod(a, b) for a remainder, percent_change(from, to), and sum, mean, median, min and max of a list, e.g. mean(12, 15.5, 9). Write numbers without thousands separators or units.`,
+      expression: `Using + - * / ^, parentheses, % (15% * 84.50 is 15% of 84.50), and sqrt, abs, floor, ceil, round(x, places), mod(a, b), percent_change(from, to), and sum, mean, median, min, max of a list, e.g. mean(12, 15.5, 9). No thousands separators or units.`,
     },
   },
 
   days_between: {
-    description: `Count the days from one date to another, e.g. how long until a due date or since something happened. It also gives each date's day of the week.`,
+    description: `Count the days between two dates, e.g. until a due date or since something happened. It also gives each date's weekday.`,
     parameters: {
-      from: `The first date, as YYYY-MM-DD, or today.`,
-      to: `The second date, as YYYY-MM-DD, or today.`,
+      from: `YYYY-MM-DD, or today.`,
+      to: `YYYY-MM-DD, or today.`,
     },
   },
 
   add_to_date: {
-    description: `Find the date some days, weeks, months or years before or after another, e.g. a due date "in 3 weeks" or "6 months from today". It also gives the day of the week.`,
+    description: `Find the date some days, weeks, months or years before or after another, e.g. "in 3 weeks" or "6 months from today", with its weekday.`,
     parameters: {
-      date: `The date to start from, as YYYY-MM-DD, or today.`,
-      amount: `How many, as a whole number; negative to go back.`,
+      date: `The start date: YYYY-MM-DD, or today.`,
+      amount: `How many units, as a whole number; negative to go back.`,
+      unit: `What amount counts, e.g. weeks for "in 3 weeks".`,
     },
   },
 
+  // weekday has no description: its choices, monday to sunday, say it all
   find_weekday: {
-    description: `Find the date of the next or last given day of the week, e.g. "next Friday", "this Saturday" or "last Monday". It gives the first one and the one after it, since "next Friday" can mean either; if it matters and the user hasn't said which, ask.`,
+    description: `Find the date of the next or last given weekday, e.g. "next Friday" or "last Monday". It gives the first one and the one after, since "next Friday" can mean either; if it matters and the user hasn't said, ask.`,
     parameters: {
-      from: `The date to count from, as YYYY-MM-DD, or today, the default.`,
-      direction: `after, the default, for the next one; before for the last one.`,
+      from: `The date to count from: YYYY-MM-DD, or today (the default).`,
+      direction: `Defaults to after, the next one.`,
     },
   },
 
   generate_image: {
-    description: `Create an image from a text description and show it to the user. Use it whenever the user asks for a picture, drawing, illustration, photo, logo or any other image.`,
+    description: `Create an image and show it to the user. Use it whenever they ask for a picture, drawing, photo, logo or any other image.`,
     parameters: {
       prompt: `A detailed description of the image, in English: the subject, setting, style, colours and composition.`,
     },
@@ -86,104 +94,99 @@ export const tools = {
 
   read_web_page: {
     // `sites` is the sites listed in Settings, each with what can be read there when rook knows
-    description: ({ sites }) => `Read a web page and get its content as Markdown. You can read pages on these sites, and their subdomains: ${sites}. Use it whenever the user asks about something on these sites, and follow the URLs in what it returns to look further.`,
+    description: ({ sites }) => `Read a web page as Markdown. Pages on these sites and their subdomains can be read: ${sites}. Use it when the user asks about something on them, and follow links in what it returns to look further.`,
     parameters: {
-      url: `The full URL of the page to read.`,
+      url: `The page's full URL.`,
     },
   },
 
   web_search: {
-    description: `Search the web with DuckDuckGo and get the top results: each one's title, link and a short snippet. Use it to find pages or facts you don't know, including recent ones. Add site:example.com to the query to search one site. Results marked (readable) can be opened with read_web_page; the others can't be opened, so answer from their snippets.`,
+    description: `Search the web for the top results' titles, links and snippets. Use it for facts you don't know or that may have changed. Add site:example.com to search one site. Only results marked (readable) open with read_web_page; answer from the others' snippets.`,
     parameters: {
-      query: `What to search for, as you'd type it into a search engine.`,
+      query: `As you'd type it into a search engine.`,
     },
   },
 
   save_memory: {
-    description: `Save a memory: something about the user, or something they asked you to remember, kept for every future chat. Save one when the user tells you something worth knowing later (their name, family, pets, work, likes, plans) or asks you to remember something. If you already have a memory about it, change that one with update_memory instead of saving another.`,
+    description: `Save something worth knowing in future chats: about the user (name, family, pets, work, likes, plans), or that they ask you to remember. If a memory about it already exists, change it with update_memory instead.`,
     parameters: {
-      content: `The memory as one short sentence that makes sense on its own, e.g. "The user's dog is called Biscuit."`,
-      pinned: pinnedHint,
+      content: `One short sentence that makes sense on its own, e.g. "The user's dog is called Biscuit."`,
+      pinned: `true only for what matters in almost every chat, like the user's name or how they like answers; pinned memories are given to you at the start of every chat. false for the rest, which you find with search_memories.`,
     },
   },
 
   search_memories: {
-    description: `Search your saved memories by meaning, for things the user told you in earlier chats. Use it whenever the user mentions something you might have been told before, or asks what you remember, before saying you don't know. Pinned memories aren't searched; they're already given to you at the start of the chat.`,
+    description: `Search your saved memories by meaning. Use it whenever the user mentions something you may have been told before, or asks what you remember, before saying you don't know. Pinned memories aren't searched; you already have them.`,
     parameters: {
-      query: `What to look for, in a few words, e.g. "the user's dog".`,
+      query: `A few words, e.g. "the user's dog".`,
     },
   },
 
+  // The ids of memories and tasks have no description; their names say it all
   update_memory: {
-    description: `Change a saved memory, when the user corrects it or it's out of date. Give its id (from search_memories, or the pinned list at the start of the chat) and whatever changes.`,
+    description: `Change a saved memory when it's corrected or out of date. Give its id (from search_memories or the pinned list) and only what changes.`,
     parameters: {
-      id: `The memory's id.`,
-      content: `The memory's new text, as one short sentence. Leave it out to keep the text.`,
-      pinned: `${pinnedHint} Leave it out to keep it as it is.`,
+      content: `The new text, as one short sentence.`,
+      pinned: `Whether it's pinned, as for save_memory.`,
     },
   },
 
   delete_memory: {
-    description: `Delete a saved memory, when the user asks you to forget it, it's no longer true, or no longer useful. Give its id (from search_memories, or the pinned list at the start of the chat).`,
-    parameters: {
-      id: `The memory's id.`,
-    },
+    description: `Delete a saved memory when the user asks you to forget it, or it's no longer true or useful. Give its id (from search_memories or the pinned list).`,
   },
 
   add_task: {
-    description: `Add a task to the user's to-do list: something they need to get done. Add one when they ask you to, or tell you about something they have to do. Check with find_tasks first if it might already be on the list.`,
+    description: `Add a task to the user's to-do list, when they ask you to or mention something they have to do. If it might already be there, check with find_tasks first.`,
     parameters: {
-      title: `What needs doing, in a few words starting with a verb, e.g. "Book the dentist".`,
-      notes: `Any details worth keeping: who, where, what to bring. Leave it out if there are none.`,
+      title: `A few words starting with a verb, e.g. "Book the dentist".`,
+      notes: `Details worth keeping: who, where, what to bring.`,
       priority: priorityHint,
-      due_date: `${dueDateHint} Leave it out if there's no date.`,
+      due_date: dueDateHint,
     },
   },
 
   find_tasks: {
-    description: `Look at the user's to-do list. With no query, lists every task still to do, most important first. With a query, finds the tasks whose title or notes contain its words, or are close to it in meaning. Use it when the user asks what they have to do, before adding a task that may be there already, and to get a task's id for update_task or complete_task.`,
+    description: `Look at the user's to-do list: with no query, every open task, most important first; with a query, the tasks matching its words or meaning. Use it when the user asks what they have to do, before adding a task that may exist, and to get ids for update_task and complete_task.`,
     parameters: {
-      query: `Words to look for, e.g. "dentist". Leave it out to list every open task.`,
-      include_done: `true to also look through tasks already done. Defaults to false.`,
+      query: `Words to look for, e.g. "dentist".`,
+      include_done: `true to include tasks already done.`,
     },
   },
 
+  // title has no description either
   update_task: {
-    description: `Change a task: its title, notes, priority or due date. Give its id (from find_tasks) and whatever changes. To mark it done, use complete_task instead.`,
+    description: `Change a task's title, notes, priority or due date. Give its id (from find_tasks) and only what changes. To mark it done, use complete_task.`,
     parameters: {
-      id: `The task's id.`,
-      title: `The new title. Leave it out to keep it.`,
-      notes: `The new notes, replacing the old ones. Leave it out to keep them.`,
+      notes: `Replaces the old notes.`,
       priority: priorityHint,
-      due_date: `${dueDateHint} An empty string removes the due date. Leave it out to keep it.`,
+      due_date: `${dueDateHint} An empty string removes it.`,
     },
   },
 
   complete_task: {
-    description: `Mark a task done when the user says they've done it, or it no longer applies (say why in note), or put it back on the list. Give its id (from find_tasks).`,
+    description: `Mark a task done when the user has done it or it no longer applies, or put it back on the list. Give its id (from find_tasks).`,
     parameters: {
-      id: `The task's id.`,
-      done: `true to mark it done (the default), false to put it back on the to-do list.`,
-      note: `When marking it done: a short note on how it went, for later, e.g. what was actually done, anything left over, or that it no longer applied and why. Leave it out to keep any note it has.`,
+      done: `false puts it back on the list. Defaults to true.`,
+      note: `When marking it done, a short note: what was done, anything left over, or why it no longer applies. Leave it out to keep any note it has.`,
     },
   },
 
   // Briefings only
   add_suggestion: {
-    description: `Add a suggestion to the briefing: something you'd like to talk to the user about. They see its title on a card, and if they choose to discuss it, a chat opens with your message as the first thing said.`,
+    description: `Add a suggestion to the briefing: something to talk to the user about. They see its title on a card; if they choose to discuss it, a chat opens with your message first.`,
     parameters: {
-      title: `A few words saying what it's about, e.g. "Biscuit's vet appointment".`,
-      message: `What you'd open the conversation with, written to the user, as you'd say it in a chat.`,
+      title: `A few words, e.g. "Biscuit's vet appointment".`,
+      message: `How you'd open the conversation, written to the user.`,
     },
   },
 
   // Briefings only
   notify_user: {
-    description: `Notify the user of something important they should know about now: new since your previous briefing, or more urgent than it was (e.g. a task due today that's still not done). It's pushed to their phone, so use it sparingly; most briefings need none. Never notify about something already in your recent notifications unless it has become more urgent.`,
+    description: `Push a notification to the user's phone about something important: new since your previous briefing, or more urgent than it was (e.g. a task due today still not done). Use it sparingly; most briefings need none, and never repeat a recent notification unless it has become more urgent.`,
     parameters: {
-      title: `A few words saying what it's about, e.g. "Passport renewal is overdue".`,
+      title: `A few words, e.g. "Passport renewal is overdue".`,
       message: `One or two sentences, written to the user.`,
-      priority: `high only when it can't wait, e.g. something due within hours. Defaults to normal.`,
+      priority: `high only when it can't wait, e.g. due within hours. Defaults to normal.`,
     },
   },
 }

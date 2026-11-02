@@ -75,11 +75,9 @@ const updateTaskTool = {
       properties: {
         id: {
           type: `string`,
-          description: prompts.tools.update_task.parameters.id,
         },
         title: {
           type: `string`,
-          description: prompts.tools.update_task.parameters.title,
         },
         notes: {
           type: `string`,
@@ -110,7 +108,6 @@ const completeTaskTool = {
       properties: {
         id: {
           type: `string`,
-          description: prompts.tools.complete_task.parameters.id,
         },
         done: {
           type: `boolean`,
