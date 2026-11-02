@@ -1,6 +1,6 @@
 import joi from '../../services/joi.js'
 import memories from '../../services/memories.js'
-import tools from '../../services/tools.js'
+import tools from '../../ai-tools/index.js'
 
 export const GET = async function (ctx) {
   const allMemories = memories.listMemories()

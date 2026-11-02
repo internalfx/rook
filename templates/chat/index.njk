@@ -18,12 +18,25 @@
     // False when no usable chat model is chosen in Settings
     const canSend = {{ 'true' if modelProblem == null else 'false' }}
 
-    // What each memory tool's row says while it runs, and once it's done
-    const memoryLabels = {
-      save_memory: { pending: `Remembering`, done: `Remembered` },
-      search_memories: { pending: `Searching memories`, done: `Searched memories` },
-      update_memory: { pending: `Updating a memory`, done: `Updated a memory` },
-      delete_memory: { pending: `Forgetting a memory`, done: `Forgot a memory` },
+    // The memory and task tools share one kind of row: what it says while the tool runs and once
+    // it's done, and its icon
+    const toolRows = {
+      save_memory: { pending: `Remembering`, done: `Remembered`, icon: `icon-memories` },
+      search_memories: { pending: `Searching memories`, done: `Searched memories`, icon: `icon-memories` },
+      update_memory: { pending: `Updating a memory`, done: `Updated a memory`, icon: `icon-memories` },
+      delete_memory: { pending: `Forgetting a memory`, done: `Forgot a memory`, icon: `icon-memories` },
+      add_task: { pending: `Adding a task`, done: `Added a task`, icon: `icon-tasks` },
+      find_tasks: { pending: `Checking tasks`, done: `Checked tasks`, icon: `icon-tasks` },
+      update_task: { pending: `Updating a task`, done: `Updated a task`, icon: `icon-tasks` },
+      complete_task: { pending: `Completing a task`, done: `Completed a task`, icon: `icon-tasks` },
+    }
+
+    // The math tools' rows show their one-line result, so there's nothing to expand
+    const resultRows = {
+      calculate: { pending: `Calculating`, done: `Calculated`, icon: `icon-calculator` },
+      days_between: { pending: `Counting days`, done: `Counted days`, icon: `icon-calendar` },
+      add_to_date: { pending: `Working out a date`, done: `Worked out a date`, icon: `icon-calendar` },
+      find_weekday: { pending: `Finding the day`, done: `Found the day`, icon: `icon-calendar` },
     }
 
     Alpine.data(`chat`, () => ({
@@ -185,14 +198,36 @@
         })
       },
 
-      isMemoryTool (message) {
-        return message.role === `tool` && memoryLabels[message.name] != null
+      hasToolRow (message) {
+        return message.role === `tool` && toolRows[message.name] != null
       },
 
-      // "Remembered" or "Remembering", and so on, for a memory tool's row
-      memoryLabel (message) {
-        const labels = memoryLabels[message.name]
-        return message.pending ? labels.pending : labels.done
+      // "Remembered" or "Remembering", and so on, for a memory or task tool's row
+      toolRowLabel (message) {
+        const row = toolRows[message.name]
+        return message.pending ? row.pending : row.done
+      },
+
+      toolRowIcon (message) {
+        return message.pending ? `icon-loading` : toolRows[message.name].icon
+      },
+
+      // What the row shows after its label: the memory's text, the task's title or the query
+      toolRowText (message) {
+        return message.memory ?? message.taskTitle ?? message.query
+      },
+
+      hasResultRow (message) {
+        return message.role === `tool` && resultRows[message.name] != null
+      },
+
+      resultRowLabel (message) {
+        const row = resultRows[message.name]
+        return message.pending ? row.pending : row.done
+      },
+
+      resultRowIcon (message) {
+        return message.pending ? `icon-loading` : resultRows[message.name].icon
       },
 
       lastMessage () {
@@ -330,6 +365,7 @@
             url: event.url,
             query: event.query,
             memory: event.memory,
+            taskTitle: event.taskTitle,
             imageId: null,
             content: ``,
             pending: true,
@@ -456,6 +492,10 @@
             <dt class="text-xs text-gray-500">Memories</dt>
             <dd class="break-words">{{ memoriesSummary if memoriesSummary else 'Off' }}</dd>
           </div>
+          <div>
+            <dt class="text-xs text-gray-500">Tasks</dt>
+            <dd>{{ 'On' if tasksOn else 'Off' }}</dd>
+          </div>
         </dl>
 
         <form method="dialog" class="mt-5 flex flex-wrap items-center gap-3">
@@ -566,14 +606,25 @@
               </div>
             </template>
 
-            {# A memory saved, searched for, changed or deleted: its text or query, and the result when expanded #}
-            <template x-if="isMemoryTool(message)">
+            {# A sum or date the model worked out, with the answer it got #}
+            <template x-if="hasResultRow(message)">
+              <div class="flex justify-start">
+                <div class="max-w-[85%] min-w-0 flex items-start gap-2 px-4 py-2.5 text-xs text-gray-500 bg-white rounded-2xl shadow-sm">
+                  <span class="inline-block size-4 shrink-0 bg-current" :class="resultRowIcon(message)" aria-hidden="true"></span>
+                  <span class="shrink-0" x-text="resultRowLabel(message)"></span>
+                  <span x-show="!message.pending" class="min-w-0 break-words text-gray-700" x-text="message.content"></span>
+                </div>
+              </div>
+            </template>
+
+            {# A memory or task saved, searched for, changed or completed: its text, title or query, and the result when expanded #}
+            <template x-if="hasToolRow(message)">
               <div class="flex justify-start">
                 <details class="max-w-[85%] min-w-0 px-4 py-2.5 text-xs text-gray-500 bg-white rounded-2xl shadow-sm">
                   <summary class="flex items-center gap-2 cursor-pointer select-none">
-                    <span class="inline-block size-4 shrink-0 bg-current" :class="message.pending ? 'icon-loading' : 'icon-memories'" aria-hidden="true"></span>
-                    <span class="shrink-0" x-text="memoryLabel(message)"></span>
-                    <span x-show="message.memory || message.query" class="min-w-0 truncate text-gray-700" x-text="message.memory ?? message.query"></span>
+                    <span class="inline-block size-4 shrink-0 bg-current" :class="toolRowIcon(message)" aria-hidden="true"></span>
+                    <span class="shrink-0" x-text="toolRowLabel(message)"></span>
+                    <span x-show="toolRowText(message)" class="min-w-0 truncate text-gray-700" x-text="toolRowText(message)"></span>
                   </summary>
                   <div x-show="!message.pending" class="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap break-words text-gray-700" x-text="message.content"></div>
                 </details>

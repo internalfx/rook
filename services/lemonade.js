@@ -1,5 +1,6 @@
 
 import config from '../configure.js'
+import prompts from '../prompts.js'
 
 // Lemonade Server: an OpenAI-compatible API for local models
 // https://lemonade-server.ai
@@ -148,6 +149,44 @@ export const streamChat = async function ({ model, messages, tools = [], signal 
   return response
 }
 
+// A chat completion that isn't streamed, for work nobody watches live (briefings). Returns the
+// model's message: { content, tool_calls }. It has slowRequestLimit, which covers loading the
+// model; pass `signal` to cancel. `tools` are OpenAI-style function definitions.
+export const completeChat = async function ({ model, messages, tools = [], signal }) {
+  const url = `${config.lemonade.host}/api/v1/chat/completions`
+
+  const payload = {
+    model,
+    messages,
+    stream: false,
+  }
+
+  if (tools.length > 0) {
+    payload.tools = tools
+  }
+
+  const response = await fetch(url, {
+    method: `POST`,
+    headers: getHeaders(),
+    body: JSON.stringify(payload),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(slowRequestLimit)]),
+    timeout: false,
+  })
+
+  if (response.ok === false) {
+    throw await failure(`chat`, response)
+  }
+
+  const body = await response.json()
+  const message = body.choices?.[0]?.message
+
+  if (message == null) {
+    throw new Error(`Lemonade chat response had no message`)
+  }
+
+  return message
+}
+
 const titleTimeout = 1000 * 60
 const titleSourceLimit = 2000
 
@@ -168,7 +207,7 @@ export const writeTitle = async function ({ model, userText, replyText }) {
     messages: [
       {
         role: `system`,
-        content: `Write a short title, at most 6 words, summarizing this conversation. Reply with only the title, no quotes or punctuation at the end.`,
+        content: prompts.chat.title,
       },
       { role: `user`, content: conversation },
     ],
@@ -291,6 +330,7 @@ export default {
   listImageModels,
   listEmbeddingModels,
   streamChat,
+  completeChat,
   writeTitle,
   generateImage,
   embed,

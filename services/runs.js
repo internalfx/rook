@@ -37,6 +37,11 @@ export const getRun = function (chatId) {
   return runsByChatId.get(chatId) ?? null
 }
 
+// Whether any chat is replying right now; scheduled briefings wait until none is
+export const hasActiveRuns = function () {
+  return runsByChatId.size > 0
+}
+
 // Stops the chat's run, if it has one. Returns whether there was one.
 export const stopRun = function (chatId) {
   const run = runsByChatId.get(chatId)
@@ -106,6 +111,7 @@ export const watchRun = function (run, output) {
 export default {
   startRun,
   getRun,
+  hasActiveRuns,
   stopRun,
   emit,
   finishRun,

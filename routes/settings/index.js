@@ -2,8 +2,10 @@
 import joi from '../../services/joi.js'
 import lemonade from '../../services/lemonade.js'
 import settings from '../../services/settings.js'
-import tools from '../../services/tools.js'
-import { parseDomains } from '../../services/sites.js'
+import tools from '../../ai-tools/index.js'
+import briefings from '../../services/briefings.js'
+import notifications from '../../services/notifications.js'
+import { parseDomains } from '../../ai-tools/sites.js'
 import { formatContextLength } from '../../lib/format.js'
 
 // Value of the "Off" choice for the image model
@@ -76,6 +78,10 @@ export const GET = async function (ctx) {
   const embeddingModel = tools.getEmbeddingModel()
   // The switch shows what was chosen, even while there's no embedding model to make it work
   const isMemoriesSwitchOn = settings.get(`memoriesOn`) === true
+  const isTasksOn = tools.isTasksOn()
+  const isBriefingOn = briefings.isScheduleOn()
+  const briefingMinutes = briefings.getBriefingMinutes()
+  const { url: ntfyUrl, token: ntfyToken } = notifications.getNtfySettings()
 
   ctx.body = ctx.nunjucks(`settings/index`, {
     modelsError,
@@ -95,6 +101,11 @@ export const GET = async function (ctx) {
     embeddingModel,
     isEmbeddingModelListed: isListed(embeddingModels, embeddingModel),
     isMemoriesSwitchOn,
+    isTasksOn,
+    isBriefingOn,
+    briefingMinutes,
+    ntfyUrl,
+    ntfyToken,
   })
 }
 
@@ -114,6 +125,13 @@ export const POST = async function (ctx) {
       webSearchOn: joi.boolean(),
       memoriesOn: joi.boolean(),
       embeddingModel: joi.string().trim(),
+      tasksOn: joi.boolean(),
+      briefingOn: joi.boolean(),
+      // Up to a day
+      briefingMinutes: joi.number().integer().min(1).max(1440),
+      // An empty topic URL turns phone notifications off
+      ntfyUrl: joi.string().trim(),
+      ntfyToken: joi.string().trim(),
       // Where to go once saved, when saving from the "Save your changes?" dialog
       returnTo: joi.string(),
     }).validateAsync(ctx.request.body)
@@ -168,6 +186,11 @@ export const POST = async function (ctx) {
     return ctx.redirect(`/settings`)
   }
 
+  if (args.ntfyUrl != null && notifications.parseTopicUrl(args.ntfyUrl) == null) {
+    ctx.addFlash(`"${args.ntfyUrl}" isn't an ntfy topic URL. It should look like https://ntfy.sh/your-topic.`, `error`)
+    return ctx.redirect(`/settings`)
+  }
+
   if (args.imageSize != null && tools.imageSizes.includes(args.imageSize) === false) {
     ctx.addFlash(`"${args.imageSize}" isn't one of the image sizes.`, `error`)
     return ctx.redirect(`/settings`)
@@ -214,6 +237,35 @@ export const POST = async function (ctx) {
     settings.set(`memoriesOn`, true)
   } else {
     settings.unset(`memoriesOn`)
+  }
+
+  // On unless switched off, like web pages
+  if (args.tasksOn === true) {
+    settings.unset(`tasksOff`)
+  } else {
+    settings.set(`tasksOff`, true)
+  }
+
+  if (args.briefingOn === true) {
+    settings.set(`briefingOn`, true)
+  } else {
+    settings.unset(`briefingOn`)
+  }
+
+  if (args.briefingMinutes != null) {
+    settings.set(`briefingMinutes`, args.briefingMinutes)
+  }
+
+  if (args.ntfyUrl != null) {
+    settings.set(`ntfyUrl`, args.ntfyUrl)
+  } else {
+    settings.unset(`ntfyUrl`)
+  }
+
+  if (args.ntfyToken != null) {
+    settings.set(`ntfyToken`, args.ntfyToken)
+  } else {
+    settings.unset(`ntfyToken`)
   }
 
   if (turnImagesOff) {

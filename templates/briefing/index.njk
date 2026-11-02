@@ -1,0 +1,197 @@
+{% extends 'layouts/default' %}
+
+{% block head %}
+<script src="/static/marked.min.js"></script>
+<script src="/static/purify.min.js"></script>
+<script>
+  document.addEventListener(`alpine:init`, () => {
+    // The model writes Markdown => HTML that's safe to put in the page, as chat replies are
+    Alpine.magic(`markdown`, () => function (text) {
+      const html = marked.parse(text, { gfm: true, breaks: true })
+      return DOMPurify.sanitize(html)
+    })
+
+    // While a briefing runs: checks every few seconds, and reloads to show it once it's done
+    Alpine.data(`briefingStatus`, () => ({
+      timer: null,
+
+      init () {
+        this.timer = setInterval(() => this.check(), 5000)
+      },
+
+      destroy () {
+        clearInterval(this.timer)
+      },
+
+      async check () {
+        try {
+          const response = await fetch(`/briefing/status`)
+          const body = await response.json()
+
+          if (body.running === false) {
+            window.location.reload()
+          }
+        } catch (err) {}
+      },
+    }))
+  })
+</script>
+{% endblock %}
+
+{% block body %}
+  {# A briefing's overview, its suggestions and what it did. Goes inside an element with
+     x-data="{ showDismissed: false }", which the dismissed suggestions' toggle uses. #}
+  {% macro briefingBody(briefing) %}
+    {% if briefing.status == 'failed' %}
+      <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
+        This briefing failed: {{ briefing.error }}
+      </div>
+    {% endif %}
+
+    {% if briefing.overview %}
+      <div class="markdown px-4 py-3 text-sm break-words" x-html="$markdown($el.dataset.text)" data-text="{{ briefing.overview }}">{{ briefing.overview }}</div>
+    {% elif briefing.status == 'done' %}
+      <p class="px-4 py-3 text-sm text-gray-500">It didn't write an overview.</p>
+    {% endif %}
+
+    {% if briefing.suggestions.length == 0 %}
+      <p class="px-4 pb-3 text-sm text-gray-500">No suggestions this time.</p>
+    {% else %}
+      <div class="border-t border-gray-100 divide-y divide-gray-100">
+        {% for suggestion in briefing.suggestions %}
+          {% set isNew = not suggestion.discussedAt and not suggestion.dismissedAt %}
+          <div class="px-4 py-3" {% if suggestion.dismissedAt %}x-cloak x-show="showDismissed"{% endif %}>
+            <div class="{{ '' if isNew else 'opacity-60' }}">
+              <h3 class="text-sm font-bold break-words">{{ suggestion.title }}</h3>
+              {# Cut to a few lines; a click shows all of it #}
+              <div x-data="{ expanded: false }" class="markdown mt-1 text-sm text-gray-700 break-words cursor-pointer"
+                :class="{ 'line-clamp-3': !expanded }" @click="expanded = !expanded"
+                x-html="$markdown($el.dataset.text)" data-text="{{ suggestion.message }}">{{ suggestion.message }}</div>
+            </div>
+
+            <div class="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              {% if suggestion.chatId %}
+                <a href="/chat/{{ suggestion.chatId }}" class="px-3 py-1.5 rounded-md border border-gray-300 bg-white hover:bg-gray-50">Open chat</a>
+              {% else %}
+                <form method="post" action="/briefing/suggestions/{{ suggestion.id }}/discuss">
+                  <button type="submit" class="flex items-center gap-1.5 px-3 py-1.5 font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md">
+                    <span class="icon-chat inline-block size-4 bg-current" aria-hidden="true"></span>
+                    Discuss
+                  </button>
+                </form>
+              {% endif %}
+
+              {% if isNew %}
+                <form method="post" action="/briefing/suggestions/{{ suggestion.id }}/dismiss">
+                  <button type="submit" class="px-3 py-1.5 rounded-md text-gray-600 hover:bg-gray-100">Dismiss</button>
+                </form>
+              {% elif suggestion.dismissedAt %}
+                <span class="text-xs text-gray-500">Dismissed</span>
+              {% else %}
+                <span class="text-xs text-gray-500">Discussed</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      {% if briefing.dismissedCount > 0 %}
+        <button type="button" class="block w-full px-4 py-2 text-left text-xs text-gray-500 border-t border-gray-100 hover:text-gray-800"
+          @click="showDismissed = !showDismissed"
+          x-text="showDismissed ? 'Hide dismissed' : 'Show {{ briefing.dismissedCount }} dismissed'">Show {{ briefing.dismissedCount }} dismissed</button>
+      {% endif %}
+    {% endif %}
+
+    {% if briefing.steps.length > 0 %}
+      <details class="px-4 py-3 text-xs text-gray-500 border-t border-gray-100">
+        <summary class="cursor-pointer select-none">What it did · {{ briefing.steps.length }} {{ 'step' if briefing.steps.length == 1 else 'steps' }}</summary>
+        <ol class="mt-2 space-y-2">
+          {% for step in briefing.steps %}
+            <li class="break-words">
+              <span class="font-mono font-semibold text-gray-700">{{ step.name }}</span>
+              <span class="font-mono">{{ step.arguments | truncate(200) }}</span>
+              <div class="mt-0.5 whitespace-pre-wrap text-gray-600">→ {{ step.result | truncate(300) }}</div>
+            </li>
+          {% endfor %}
+        </ol>
+      </details>
+    {% endif %}
+  {% endmacro %}
+
+  <div class="max-w-3xl">
+    <div class="mb-6 flex flex-wrap items-start gap-4">
+      <div class="flex-1 min-w-0">
+        <h1 class="text-2xl font-bold">Briefing</h1>
+        <p class="mt-1 text-sm text-gray-500">
+          {% if latest %}Last briefed {{ latest.ago }}.{% endif %}
+          {% if nextText %}
+            Next briefing {{ nextText }}.
+          {% else %}
+            Scheduled briefings are off; <a href="/settings" class="underline hover:text-gray-800">turn them on in Settings</a>.
+          {% endif %}
+        </p>
+      </div>
+
+      <form method="post" action="/briefing/run">
+        <button type="submit" class="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg disabled:opacity-50 disabled:hover:bg-sky-500"
+          {% if isRunning %}disabled{% endif %}>
+          {% if isRunning %}
+            <span class="icon-loading inline-block size-4 bg-current" aria-hidden="true"></span>
+            Briefing…
+          {% else %}
+            <span class="icon-briefing inline-block size-4 bg-current" aria-hidden="true"></span>
+            Brief me now
+          {% endif %}
+        </button>
+      </form>
+    </div>
+
+    <div class="space-y-6">
+      {% if isRunning %}
+        <div x-data="briefingStatus" class="flex items-center gap-3 p-4 text-sm rounded-lg border border-sky-200 bg-sky-50 text-sky-800" role="status">
+          <span class="icon-loading inline-block size-5 shrink-0 bg-current" aria-hidden="true"></span>
+          <span>Briefing now: Rook is looking over your memories, tasks and recent chats. This page updates when it's done.</span>
+        </div>
+      {% endif %}
+
+      {% if latest %}
+        <section class="bg-white rounded-lg shadow-sm" x-data="{ showDismissed: false }">
+          <div class="px-4 py-3 border-b border-gray-200">
+            <h2 class="font-bold">{{ latest.when }}</h2>
+            <p class="mt-0.5 text-xs text-gray-500">{{ 'Scheduled' if latest.startedBy == 'schedule' else 'Asked for' }} · {{ latest.ago }}</p>
+          </div>
+
+          {{ briefingBody(latest) }}
+        </section>
+      {% elif not isRunning %}
+        <div class="p-6 text-sm text-center text-gray-500 bg-white rounded-lg shadow-sm">
+          <p>No briefings yet.</p>
+          <p class="mt-1">A briefing has the chat model look over your memories, tasks and recent chats, then suggest things it would like to talk about. Each suggestion can start a chat, with the model speaking first.</p>
+        </div>
+      {% endif %}
+
+      {% if earlier.length > 0 %}
+        <section>
+          <h2 class="mb-2 text-sm font-bold text-gray-600">Earlier briefings</h2>
+
+          <div class="space-y-2">
+            {% for briefing in earlier %}
+              <details class="bg-white rounded-lg shadow-sm" x-data="{ showDismissed: false }">
+                <summary class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 cursor-pointer select-none">
+                  <span class="text-sm font-semibold">{{ briefing.when }}</span>
+                  <span class="text-xs text-gray-500">
+                    {{ briefing.ago }} · {{ briefing.suggestions.length }} {{ 'suggestion' if briefing.suggestions.length == 1 else 'suggestions' }}{% if briefing.newCount > 0 %}, {{ briefing.newCount }} new{% endif %}{% if briefing.status == 'failed' %} · failed{% endif %}
+                  </span>
+                </summary>
+
+                <div class="border-t border-gray-200">
+                  {{ briefingBody(briefing) }}
+                </div>
+              </details>
+            {% endfor %}
+          </div>
+        </section>
+      {% endif %}
+    </div>
+  </div>
+{% endblock body %}

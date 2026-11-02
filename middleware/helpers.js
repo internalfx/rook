@@ -2,6 +2,7 @@
 import caches from '../services/caches.js'
 import config from '../configure.js'
 import nunjucks from '../services/nunjucks.js'
+import indicators from '../lib/indicators.js'
 import dayjs from 'dayjs'
 import numeral from 'numeral'
 import _ from 'lodash'
@@ -48,9 +49,10 @@ export default async function (ctx, next) {
       _,
     }
 
+    // briefingIsNew, notificationsUnseen and tasksBadge, for the nav items and the bell
     const output = nunjucks.render(
       templatePath,
-      { ...locals, ...tools, ctx, config },
+      { ...locals, ...tools, ctx, config, ...indicators.readIndicators() },
     )
     // console.timeEnd(label)
     return output

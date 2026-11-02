@@ -4,11 +4,20 @@ table tr td {
   vertical-align: middle;
 }
 
+/* Tailwind 4 gives buttons the plain arrow cursor; rook shows the pointing hand on any button
+   that can be clicked. A disabled one keeps the arrow. */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 /* Icons from static/icons are used as masks over the text colour (bg-current),
    so they follow the colour of the label next to them */
-.icon-dashboard {
-  -webkit-mask: url(/static/icons/iconoven--dashboard.svg) center / contain no-repeat;
-  mask: url(/static/icons/iconoven--dashboard.svg) center / contain no-repeat;
+.icon-briefing {
+  -webkit-mask: url(/static/icons/mdi--lightbulb-on-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--lightbulb-on-outline.svg) center / contain no-repeat;
 }
 .icon-chat {
   -webkit-mask: url(/static/icons/mdi--chat-outline.svg) center / contain no-repeat;
@@ -65,6 +74,22 @@ table tr td {
 .icon-clock {
   -webkit-mask: url(/static/icons/mdi--clock-outline.svg) center / contain no-repeat;
   mask: url(/static/icons/mdi--clock-outline.svg) center / contain no-repeat;
+}
+.icon-tasks {
+  -webkit-mask: url(/static/icons/mdi--checkbox-marked-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--checkbox-marked-outline.svg) center / contain no-repeat;
+}
+.icon-bell {
+  -webkit-mask: url(/static/icons/mdi--bell-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--bell-outline.svg) center / contain no-repeat;
+}
+.icon-calculator {
+  -webkit-mask: url(/static/icons/mdi--calculator-variant-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--calculator-variant-outline.svg) center / contain no-repeat;
+}
+.icon-calendar {
+  -webkit-mask: url(/static/icons/mdi--calendar-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--calendar-outline.svg) center / contain no-repeat;
 }
 .icon-loading {
   -webkit-mask: url(/static/icons/line-md--loading-twotone-loop.svg) center / contain no-repeat;

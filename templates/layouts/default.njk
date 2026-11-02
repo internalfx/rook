@@ -1,6 +1,7 @@
 {% set nav = [
-  { href: '/', label: 'Dashboard', icon: 'icon-dashboard' },
+  { href: '/briefing', label: 'Briefing', icon: 'icon-briefing' },
   { href: '/chat', label: 'Chat', icon: 'icon-chat' },
+  { href: '/tasks', label: 'Tasks', icon: 'icon-tasks' },
   { href: '/memories', label: 'Memories', icon: 'icon-memories' },
   { href: '/settings', label: 'Settings', icon: 'icon-settings' }
 ] -%}
@@ -34,9 +35,54 @@
       } catch (err) {}
 
       document.addEventListener(`alpine:init`, () => {
-        Alpine.data(`layout`, () => ({
+        // `indicators` is what the server rendered the nav dots, the tasks badge and the bell with:
+        // { briefingIsNew, notificationsUnseen, tasksBadge }
+        Alpine.data(`layout`, (indicators) => ({
+          ...indicators,
+
           // Small screens only: the sidebar slides over the page and starts closed
           mobileOpen: false,
+
+          // A page can stay open a long time (a chat does), so the indicators are asked for again
+          // every so often, and as soon as the tab is looked at again
+          init () {
+            setInterval(() => this.refresh(), 30000)
+
+            document.addEventListener(`visibilitychange`, () => this.refresh())
+
+            // Back to a page from the browser's cache, which still shows what it had before
+            window.addEventListener(`pageshow`, (event) => {
+              if (event.persisted) {
+                this.refresh()
+              }
+            })
+          },
+
+          async refresh () {
+            if (document.hidden) {
+              return
+            }
+
+            try {
+              const response = await fetch(`/indicators`)
+              const body = await response.json()
+
+              // The Briefing and Notifications pages mark what they show as seen, so on those a
+              // reload shows the new one and clears its dot
+              const path = window.location.pathname
+              const isNewHere = (path === `/briefing` && body.briefingIsNew) ||
+                (path === `/notifications` && body.notificationsUnseen)
+
+              if (isNewHere) {
+                window.location.reload()
+                return
+              }
+
+              this.briefingIsNew = body.briefingIsNew
+              this.notificationsUnseen = body.notificationsUnseen
+              this.tasksBadge = body.tasksBadge
+            } catch (err) {}
+          },
 
           toggleSidebar () {
             const isWide = window.matchMedia(`(min-width: 64rem)`).matches
@@ -67,12 +113,23 @@
     {% endblock %}
   </head>
 
-  <body class="h-dvh flex flex-col bg-gray-100 text-gray-900" x-data="layout">
+  <body class="h-dvh flex flex-col bg-gray-100 text-gray-900"
+    x-data="layout({ briefingIsNew: {{ briefingIsNew }}, notificationsUnseen: {{ notificationsUnseen }}, tasksBadge: {{ tasksBadge }} })">
     <header class="h-14 shrink-0 flex items-center gap-3 px-4 bg-white border-b border-gray-200">
       <button type="button" class="-ml-1 p-1.5 rounded-md text-gray-600 hover:bg-gray-100" aria-label="Toggle navigation" @click="toggleSidebar()">
         <span class="icon-menu block size-5 bg-current" aria-hidden="true"></span>
       </button>
       <a href="/" class="text-lg font-bold">{{ config.appName }}</a>
+
+      {# The dot means a notification has arrived since the Notifications page was last opened #}
+      <a href="/notifications" class="relative ml-auto -mr-1 p-1.5 rounded-md text-gray-600 hover:bg-gray-100" aria-label="Notifications"
+        {% if ctx.path == '/notifications' %}aria-current="page"{% endif %}>
+        <span class="icon-bell block size-5 bg-current" aria-hidden="true"></span>
+        {# Rendered as they start, so nothing flashes before Alpine takes over #}
+        <span x-show="notificationsUnseen" class="absolute top-1 right-1 size-2 rounded-full bg-red-500 ring-2 ring-white" aria-hidden="true"
+          {% if not notificationsUnseen %}style="display: none"{% endif %}></span>
+        <span x-show="notificationsUnseen" class="sr-only" {% if not notificationsUnseen %}style="display: none"{% endif %}>New notifications</span>
+      </a>
     </header>
 
     <div class="relative flex-1 min-h-0 flex">
@@ -84,16 +141,24 @@
         :class="{ '-translate-x-full': !mobileOpen }">
         <nav class="flex-1 overflow-y-auto p-3 space-y-1">
           {% for item in nav %}
-            {% if item.href == '/' %}
-              {% set isCurrent = ctx.path == '/' %}
-            {% else %}
-              {% set isCurrent = ctx.path == item.href or ctx.path.startsWith(item.href + '/') %}
-            {% endif %}
+            {% set isCurrent = ctx.path == item.href or ctx.path.startsWith(item.href + '/') %}
             <a href="{{ item.href }}"
               class="flex items-center gap-2 px-3 py-2 text-sm rounded-md {% if isCurrent %}bg-sky-50 text-sky-700 font-semibold{% else %}text-gray-700 hover:bg-gray-100{% endif %}"
               {% if isCurrent %}aria-current="page"{% endif %}>
               <span class="{{ item.icon }} inline-block size-4 shrink-0 bg-current" aria-hidden="true"></span>
-              {{ item.label }}
+              <span class="flex-1">{{ item.label }}</span>
+              {# A briefing has finished since the Briefing page was last opened #}
+              {% if item.href == '/briefing' %}
+                <span x-show="briefingIsNew" class="size-2 rounded-full bg-sky-500" aria-hidden="true"
+                  {% if not briefingIsNew %}style="display: none"{% endif %}></span>
+                <span x-show="briefingIsNew" class="sr-only" {% if not briefingIsNew %}style="display: none"{% endif %}>New briefing</span>
+              {% endif %}
+              {# Tasks due today or overdue #}
+              {% if item.href == '/tasks' %}
+                <span x-show="tasksBadge > 0" x-text="tasksBadge" :aria-label="`${tasksBadge} due today or overdue`"
+                  class="min-w-5 px-1.5 text-center text-xs font-bold leading-5 rounded-full bg-red-500 text-white"
+                  aria-label="{{ tasksBadge }} due today or overdue" {% if tasksBadge == 0 %}style="display: none"{% endif %}>{{ tasksBadge }}</span>
+              {% endif %}
             </a>
           {% endfor %}
         </nav>

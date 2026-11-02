@@ -2,20 +2,43 @@ import joi from '../../services/joi.js'
 import lemonade from '../../services/lemonade.js'
 import chats from '../../services/chats.js'
 import settings from '../../services/settings.js'
-import tools from '../../services/tools.js'
+import tools from '../../ai-tools/index.js'
 import runs from '../../services/runs.js'
 import { watchRunResponse } from '../../lib/watchRunResponse.js'
+import { maxCallsPerTool, maxRounds, describeCallLimit } from '../../ai-tools/limits.js'
+import config from '../../configure.js'
+import prompts from '../../prompts.js'
 
-// How many times the model can call each tool per message. Each tool counts on its own, so
-// using up web searches doesn't stop it saving a memory. Calls over the limit are answered as
-// not run, and the model is told why. Every round offers the same tools (changing them would
-// change the prompt).
-const maxCallsPerTool = 10
+// Every round of a reply offers the same tools (changing them would change the prompt); see
+// ai-tools/limits.js for how many calls and rounds it gets.
 
-// How many replies the model gets per message, counting the ones after each round of tool calls.
-// A safety net for a model that keeps calling tools whatever it's told; tool calls in the last
-// round are answered as not run.
-const maxRounds = 20
+// Said for the user before a conversation the model started (from a briefing suggestion), for
+// the model only. Some models' chat templates refuse a conversation that doesn't start with the
+// user.
+const briefingOpener = prompts.chat.briefingOpener
+
+// What every chat starts with: the chat prompt, then the pinned memories. One system message,
+// since some models' chat templates only accept one, as briefings do. Null when both are empty.
+const buildSystemMessage = function () {
+  const parts = []
+  const prompt = prompts.chat.system({ appName: config.appName, ownerName: config.owner.name }).trim()
+
+  if (prompt !== ``) {
+    parts.push(prompt)
+  }
+
+  const memoriesMessage = tools.buildMemoriesMessage()
+
+  if (memoriesMessage != null) {
+    parts.push(memoriesMessage.content)
+  }
+
+  if (parts.length === 0) {
+    return null
+  }
+
+  return { role: `system`, content: parts.join(`\n\n`) }
+}
 
 // Used when the model can't write a title: the start of the first message
 const fallbackTitle = function (text) {
@@ -175,18 +198,16 @@ const runToolCalls = async function ({ toolCalls, chat, chatTools, history, send
     const url = tools.readToolUrl(argumentsText)
     const query = tools.readSearchQuery(argumentsText)
     const memory = tools.readMemoryContent(argumentsText)
+    const taskTitle = tools.readTaskTitle(argumentsText)
 
-    sendEvent({ type: `toolCall`, toolCallId: call.id, name, prompt, url, query, memory })
+    sendEvent({ type: `toolCall`, toolCallId: call.id, name, prompt, url, query, memory, taskTitle })
 
     let result = null
 
     if (skipReason != null) {
       result = { content: skipReason, imageId: null }
     } else if (callCount > maxCallsPerTool) {
-      result = {
-        content: `Not run: ${name} can be used at most ${maxCallsPerTool} times for one message. Answer with what you have, or use another tool.`,
-        imageId: null,
-      }
+      result = { content: describeCallLimit(name), imageId: null }
     } else if (abort.signal.aborted === true) {
       result = { content: `The user stopped this before it ran.`, imageId: null }
     } else {
@@ -222,7 +243,7 @@ const runToolCalls = async function ({ toolCalls, chat, chatTools, history, send
 // services/runs.js), and saves each message as it completes:
 //   { type: "assistant" }                                 a new reply from the model begins
 //   { type: "reasoning" | "content", text }               more of that reply
-//   { type: "toolCall", toolCallId, name, prompt, url, query, memory }  the model asked for a tool
+//   { type: "toolCall", toolCallId, name, prompt, url, query, memory, taskTitle }  the model asked for a tool
 //   { type: "toolResult", toolCallId, content, imageId }  the tool finished
 //   { type: "title", title }                              a new chat's title
 //   { type: "error", message }
@@ -233,10 +254,10 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
   const toolDefinitions = tools.getToolDefinitions(chatTools)
   const abort = run.abort
 
-  // The pinned memories start the conversation the model sees, but aren't saved with it. Taken
-  // once per message, so the start stays the same through every round, even when the model
-  // pins a memory part way.
-  const memoriesMessage = tools.buildMemoriesMessage()
+  // The chat prompt and pinned memories start the conversation the model sees, but aren't saved
+  // with it. Taken once per message, so the start stays the same through every round, even when
+  // the model pins a memory part way.
+  const systemMessage = buildSystemMessage()
 
   const sendEvent = function (event) {
     runs.emit(run, event)
@@ -254,11 +275,19 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
     for (let round = 1; round <= maxRounds; round += 1) {
       if (upstream == null) {
         try {
-          let messages = history
+          // Neither of these is saved: the system message, and the opener in front of a
+          // conversation the model started from a briefing suggestion
+          const startMessages = []
 
-          if (memoriesMessage != null) {
-            messages = [memoriesMessage, ...history]
+          if (systemMessage != null) {
+            startMessages.push(systemMessage)
           }
+
+          if (history[0]?.role === `assistant`) {
+            startMessages.push({ role: `user`, content: briefingOpener })
+          }
+
+          const messages = [...startMessages, ...history]
 
           upstream = await lemonade.streamChat({ model, messages, tools: toolDefinitions, signal: abort.signal })
         } catch (err) {

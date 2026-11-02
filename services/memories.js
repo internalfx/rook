@@ -1,10 +1,11 @@
 import cuid from 'cuid'
 import db from './db.js'
-import lemonade from './lemonade.js'
+import { rankByMeaning } from './embeddings.js'
 
 // Memories are facts kept for every chat. Pinned ones are sent at the start of every chat; the
 // rest are found by meaning with search(). Writing a memory never calls Lemonade: its vector is
-// made when it's next searched (see search), so the memories page works while Lemonade is down.
+// made when it's next searched (see services/embeddings.js), so the memories page works while
+// Lemonade is down.
 
 const memoryColumns = `memories.id, memories.content, memories.pinned, memories.chatId, memories.createdAt, memories.updatedAt`
 
@@ -16,6 +17,9 @@ const selectMemories = db.query(`
 const selectMemory = db.query(`SELECT ${memoryColumns} FROM memories WHERE id = $id`)
 const selectPinned = db.query(`SELECT ${memoryColumns} FROM memories WHERE pinned = 1 ORDER BY createdAt`)
 const countPinnedRows = db.query(`SELECT COUNT(*) AS count FROM memories WHERE pinned = 1`)
+const selectRecentSearchable = db.query(`
+  SELECT ${memoryColumns} FROM memories WHERE pinned = 0 ORDER BY updatedAt DESC LIMIT $limit
+`)
 const selectSearchable = db.query(`
   SELECT ${memoryColumns}, memories.embedding, memories.embeddingModel
   FROM memories WHERE pinned = 0
@@ -39,35 +43,6 @@ const deleteMemoryRow = db.query(`DELETE FROM memories WHERE id = $id`)
 // SQLite has no booleans; pinned is stored as 1 or 0
 const toMemory = function (row) {
   return { ...row, pinned: row.pinned === 1 }
-}
-
-// A vector => the bytes stored in memories.embedding, and back
-const encodeVector = function (vector) {
-  const floats = new Float32Array(vector)
-  return Buffer.from(floats.buffer)
-}
-
-const decodeVector = function (bytes) {
-  return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
-}
-
-// 1 when two vectors point the same way (the texts mean the same), down to -1
-const cosineSimilarity = function (a, b) {
-  let dot = 0
-  let lengthA = 0
-  let lengthB = 0
-
-  for (let i = 0; i < a.length; i += 1) {
-    dot += a[i] * b[i]
-    lengthA += a[i] * a[i]
-    lengthB += b[i] * b[i]
-  }
-
-  if (lengthA === 0 || lengthB === 0) {
-    return 0
-  }
-
-  return dot / (Math.sqrt(lengthA) * Math.sqrt(lengthB))
 }
 
 // Every memory, pinned first, then the most recently changed; each has the title of the chat it
@@ -96,6 +71,12 @@ export const listPinned = function () {
 export const countPinned = function () {
   const row = countPinnedRows.get()
   return row.count
+}
+
+// The searchable memories changed most recently, newest first, for briefings to look over
+export const listRecent = function (limit) {
+  const rows = selectRecentSearchable.all({ limit })
+  return rows.map(toMemory)
 }
 
 // `chatId` is the chat it was saved in, or null when the user added it
@@ -127,48 +108,26 @@ export const deleteMemory = function (id) {
 export const search = async function ({ query, model, limit = 5, signal }) {
   const rows = selectSearchable.all()
 
-  if (rows.length === 0) {
-    return []
-  }
-
-  const stale = rows.filter(function (row) {
-    return row.embedding == null || row.embeddingModel !== model
+  const ranked = await rankByMeaning({
+    rows,
+    query,
+    model,
+    signal,
+    textOf: function (row) {
+      return row.content
+    },
+    saveVector: function (row, embedding) {
+      updateEmbedding.run({ id: row.id, embedding, embeddingModel: model })
+    },
   })
 
-  const staleTexts = stale.map(function (row) {
-    return row.content
-  })
-
-  const vectors = await lemonade.embed({ model, inputs: [query, ...staleTexts], signal })
-  const queryVector = vectors[0]
-
-  const vectorsById = {}
-
-  for (const row of rows) {
-    if (row.embedding != null && row.embeddingModel === model) {
-      vectorsById[row.id] = decodeVector(row.embedding)
-    }
-  }
-
-  stale.forEach(function (row, index) {
-    const vector = vectors[index + 1]
-
-    updateEmbedding.run({ id: row.id, embedding: encodeVector(vector), embeddingModel: model })
-    vectorsById[row.id] = vector
-  })
-
-  const scored = rows.map(function (row) {
-    const score = cosineSimilarity(queryVector, vectorsById[row.id])
+  const closest = ranked.slice(0, limit).map(function ({ row, score }) {
     const { embedding, embeddingModel, ...memory } = row
 
     return { ...toMemory(memory), score }
   })
 
-  scored.sort(function (a, b) {
-    return b.score - a.score
-  })
-
-  return scored.slice(0, limit)
+  return closest
 }
 
 export default {
@@ -176,6 +135,7 @@ export default {
   getMemory,
   listPinned,
   countPinned,
+  listRecent,
   createMemory,
   updateMemory,
   deleteMemory,
