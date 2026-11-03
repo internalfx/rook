@@ -6,6 +6,11 @@ import { readTaskForm } from '../../lib/taskForm.js'
 // How many done tasks the page lists
 const doneShown = 50
 
+// How many tasks a search shows, closest first, and how long it may take: the first search with
+// a new embedding model embeds every task
+const searchLimit = 10
+const searchTimeout = 1000 * 60 * 2
+
 // A task as the page shows it: its due date in words ("Tomorrow", "Overdue · Mon 2 Nov"), how
 // soon that is (dueState), and the day it was done
 const toPageTask = function (task) {
@@ -38,13 +43,39 @@ const toPageTask = function (task) {
   return { ...task, dueState, dueLabel, doneLabel }
 }
 
+// The tasks to do, and those done. With ?q=, the tasks closest in meaning to it instead, done
+// ones too, found with the embedding model as the chat model finds them.
 export const GET = async function (ctx) {
+  const q = typeof ctx.query.q === `string` ? ctx.query.q.trim() : ``
+
+  let results = null
+  let searchError = null
+
+  if (q !== ``) {
+    const model = tools.getEmbeddingModel()
+
+    if (model == null) {
+      searchError = `Searching by meaning needs an embedding model; choose one in Settings.`
+    } else {
+      try {
+        const closest = await tasks.searchByMeaning({ query: q, model, includeDone: true, limit: searchLimit, signal: AbortSignal.timeout(searchTimeout) })
+        results = closest.map(toPageTask)
+      } catch (err) {
+        console.error(err)
+        searchError = `Couldn't search: ${err.message}`
+      }
+    }
+  }
+
   const openTasks = tasks.listOpen().map(toPageTask)
   const doneTasks = tasks.listDone(doneShown).map(toPageTask)
 
   const dueCount = openTasks.filter(function (task) {
     return task.dueState === `overdue` || task.dueState === `today`
   }).length
+
+  // Where a task's forms come back to, so a search stays open
+  const returnTo = q === `` ? `/tasks` : `/tasks?q=${encodeURIComponent(q)}`
 
   ctx.body = ctx.nunjucks(`tasks/index`, {
     openTasks,
@@ -53,6 +84,10 @@ export const GET = async function (ctx) {
     dueCount,
     maxDoneNoteLength: tasks.maxDoneNoteLength,
     isTasksOn: tools.isTasksOn(),
+    q,
+    results,
+    searchError,
+    returnTo,
   })
 }
 

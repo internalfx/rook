@@ -49,7 +49,7 @@
   {% endmacro %}
 
   {# Delete asks first, as deleting a chat does #}
-  {% macro deleteControls(task) %}
+  {% macro deleteControls(task, returnTo) %}
     <div x-show="!confirmDelete" class="flex items-center gap-1">
       {{ caller() if caller else '' }}
       <button type="button" class="px-2 py-1 rounded hover:bg-red-50 hover:text-red-600" @click="confirmDelete = true">Delete</button>
@@ -57,6 +57,7 @@
 
     <form x-cloak x-show="confirmDelete" method="post" action="/tasks/{{ task.id }}/delete"
       class="flex items-center gap-2" @keydown.escape="confirmDelete = false">
+      <input type="hidden" name="returnTo" value="{{ returnTo }}">
       <span class="text-gray-600">Delete this task?</span>
       <button type="submit" class="px-2 py-1 font-bold text-white bg-red-600 hover:bg-red-700 rounded">Delete</button>
       <button type="button" class="px-2 py-1 rounded hover:bg-gray-100" @click="confirmDelete = false">Cancel</button>
@@ -71,7 +72,7 @@
       class="flex-1 min-w-48 p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
 
     <label class="sr-only" for="{{ idPrefix }}-priority">Priority</label>
-    <select id="{{ idPrefix }}-priority" name="priority" class="py-2 pl-2 pr-8 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+    <select id="{{ idPrefix }}-priority" name="priority" class="form-select py-2 pl-2 pr-8 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
       {% set current = task.priority if task else 'normal' %}
       <option value="high" {% if current == 'high' %}selected{% endif %}>High</option>
       <option value="normal" {% if current == 'normal' %}selected{% endif %}>Normal</option>
@@ -81,6 +82,139 @@
     <label class="sr-only" for="{{ idPrefix }}-due">Due date</label>
     <input id="{{ idPrefix }}-due" type="date" name="dueDate" value="{{ task.dueDate if task and task.dueDate else '' }}"
       class="p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+  {% endmacro %}
+
+  {# A task still to do, in the list or in search results. `returnTo` is the page to come back to
+     once it's completed, edited or deleted, so a search stays open. #}
+  {% macro openTaskItem(task, returnTo) %}
+    <li class="px-4 py-3" x-data="{ editing: false, confirmDelete: false, completing: false }">
+      <div x-show="!editing" class="flex items-start gap-3">
+        {# Ticking it opens the completion form below; unticking it is the same as Cancel #}
+        <div class="pt-0.5">
+          <input type="checkbox" x-model="completing" class="size-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+            aria-label="Mark done: {{ task.title }}" @change="if (!$el.checked) $refs.completeForm.reset()">
+        </div>
+
+        <div class="flex-1 min-w-0">
+          <p class="text-sm break-words">{{ task.title }}</p>
+
+          {% if task.notes %}
+            {# Cut to 3 lines; Show more, or a click on the text, shows all of it #}
+            <div x-data="clampedText">
+              <p x-ref="text" class="mt-0.5 text-xs text-gray-500 whitespace-pre-wrap break-words line-clamp-3"
+                :class="{ 'line-clamp-3': !expanded, 'cursor-pointer': clamped && !expanded }"
+                @click="if (clamped) expanded = true">{{ task.notes }}</p>
+              <button type="button" x-cloak x-show="clamped" class="mt-0.5 text-xs text-sky-600 hover:underline"
+                :aria-expanded="expanded" @click="expanded = !expanded" x-text="expanded ? 'Show less' : 'Show more'">Show more</button>
+            </div>
+          {% endif %}
+
+          <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+            {{ taskLabels(task) }}
+
+            {% if task.chatId %}
+              <a href="/chat/{{ task.chatId }}" class="min-w-0 max-w-full truncate underline hover:text-gray-800">From {{ task.chatTitle or 'a chat' }}</a>
+            {% endif %}
+
+            <span class="flex-1"></span>
+
+            {% call deleteControls(task, returnTo) %}
+              <button type="button" class="px-2 py-1 rounded hover:bg-gray-100 hover:text-gray-800"
+                @click="editing = true; $nextTick(() => $refs.editForm.elements.title.focus())">Edit</button>
+            {% endcall %}
+          </div>
+
+          {# Completing takes a second click, so a stray tick can be cancelled. The note
+             box doesn't take focus, so a phone's keyboard only comes up for a note.
+             Cancel unticks the box and clears what was typed. #}
+          <form x-cloak x-show="completing" x-ref="completeForm" method="post" action="/tasks/{{ task.id }}/done" class="mt-2 space-y-2"
+            @keydown.escape="completing = false; $refs.completeForm.reset()">
+            <input type="hidden" name="done" value="true">
+            <input type="hidden" name="returnTo" value="{{ returnTo }}">
+            <label class="sr-only" for="task-{{ task.id }}-complete-note">Completion note</label>
+            <textarea id="task-{{ task.id }}-complete-note" name="doneNote" rows="2" maxlength="{{ maxDoneNoteLength }}"
+              placeholder="Completion note (optional): how it went, anything left over, or why it no longer applies"
+              class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"></textarea>
+
+            <div class="flex justify-end gap-2">
+              <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="completing = false; $refs.completeForm.reset()">Cancel</button>
+              <button type="submit" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md">Complete</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {# Cancel puts the form back as it was #}
+      <form x-cloak x-show="editing" x-ref="editForm" method="post" action="/tasks/{{ task.id }}/update" class="space-y-2"
+        @keydown.escape="editing = false; $refs.editForm.reset()">
+        <input type="hidden" name="returnTo" value="{{ returnTo }}">
+        <div class="flex flex-wrap items-center gap-2">
+          {{ taskFields(task, 'task-' + task.id) }}
+        </div>
+
+        <label class="sr-only" for="task-{{ task.id }}-notes">Notes</label>
+        <textarea id="task-{{ task.id }}-notes" name="notes" rows="2" maxlength="4000" placeholder="Notes"
+          class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">{{ task.notes }}</textarea>
+
+        <div class="flex justify-end gap-2">
+          <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="editing = false; $refs.editForm.reset()">Cancel</button>
+          <button type="submit" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md">Save</button>
+        </div>
+      </form>
+    </li>
+  {% endmacro %}
+
+  {# A done task, in the Done list or in search results. `returnTo` is the page to come back to once
+     it's put back, its note changed or it's deleted, so a search stays open. #}
+  {% macro doneTaskItem(task, returnTo) %}
+    <li class="flex items-start gap-3 px-4 py-3" x-data="{ confirmDelete: false, editingNote: false }">
+      {# Unticking it puts it back on the list, and removes its completion note #}
+      <form method="post" action="/tasks/{{ task.id }}/done" class="pt-0.5">
+        <input type="hidden" name="done" value="false">
+        <input type="hidden" name="returnTo" value="{{ returnTo }}">
+        <input type="checkbox" checked class="size-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+          aria-label="Put back on the list: {{ task.title }}" @change="$el.form.submit()">
+      </form>
+
+      <div class="flex-1 min-w-0">
+        <p class="text-sm text-gray-500 line-through break-words">{{ task.title }}</p>
+
+        {% if task.doneNote %}
+          {# Cut to 3 lines, as a task's notes are #}
+          <div x-show="!editingNote" x-data="clampedText">
+            <p x-ref="text" class="mt-0.5 text-xs text-gray-600 whitespace-pre-wrap break-words line-clamp-3"
+              :class="{ 'line-clamp-3': !expanded, 'cursor-pointer': clamped && !expanded }"
+              @click="if (clamped) expanded = true">{{ task.doneNote }}</p>
+            <button type="button" x-cloak x-show="clamped" class="mt-0.5 text-xs text-sky-600 hover:underline"
+              :aria-expanded="expanded" @click="expanded = !expanded" x-text="expanded ? 'Show less' : 'Show more'">Show more</button>
+          </div>
+        {% endif %}
+
+        {# Cancel puts the note back as it was; saving it empty removes it #}
+        <form x-cloak x-show="editingNote" x-ref="noteForm" method="post" action="/tasks/{{ task.id }}/note" class="mt-2 space-y-2"
+          @keydown.escape="editingNote = false; $refs.noteForm.reset()">
+          <input type="hidden" name="returnTo" value="{{ returnTo }}">
+          <label class="sr-only" for="task-{{ task.id }}-done-note">Completion note</label>
+          <textarea id="task-{{ task.id }}-done-note" name="doneNote" rows="2" maxlength="{{ maxDoneNoteLength }}"
+            placeholder="How it went, anything left over, or why it no longer applies"
+            class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">{{ task.doneNote }}</textarea>
+
+          <div class="flex justify-end gap-2">
+            <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="editingNote = false; $refs.noteForm.reset()">Cancel</button>
+            <button type="submit" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md">Save</button>
+          </div>
+        </form>
+
+        <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+          <span>Done {{ task.doneLabel }}</span>
+          <span class="flex-1"></span>
+          {% call deleteControls(task, returnTo) %}
+            <button type="button" x-show="!editingNote" class="px-2 py-1 rounded hover:bg-gray-100 hover:text-gray-800"
+              @click="editingNote = true; $nextTick(() => $refs.noteForm.elements.doneNote.focus())">{{ 'Edit note' if task.doneNote else 'Add note' }}</button>
+          {% endcall %}
+        </div>
+      </div>
+    </li>
   {% endmacro %}
 
   <div class="max-w-3xl">
@@ -98,6 +232,16 @@
         </div>
       {% endif %}
 
+      {# Finds tasks by meaning with the embedding model, as the chat model does #}
+      <form method="get" action="/tasks" role="search" class="flex flex-wrap items-center gap-2 p-4 bg-white rounded-lg shadow-sm"
+        x-data="{ searching: false }" @submit="searching = true">
+        <label for="task-search" class="sr-only">Search tasks</label>
+        <input id="task-search" type="search" name="q" value="{{ q }}" placeholder="Search by meaning, e.g. call the plumber"
+          class="flex-1 min-w-48 p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+        <button type="submit" class="px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg disabled:opacity-50"
+          :disabled="searching" x-text="searching ? 'Searching…' : 'Search'">Search</button>
+      </form>
+
       <form method="post" action="/tasks" class="p-4 bg-white rounded-lg shadow-sm" x-data="{ showNotes: false }">
         <div class="flex flex-wrap items-center gap-2">
           {{ taskFields(null, 'new-task') }}
@@ -114,151 +258,62 @@
           class="mt-2 w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"></textarea>
       </form>
 
-      <section class="bg-white rounded-lg shadow-sm">
-        {% if openTasks.length == 0 %}
-          <p class="p-4 text-sm text-gray-500">Nothing to do.</p>
-        {% else %}
-          <ul class="divide-y divide-gray-100">
-            {% for task in openTasks %}
-              <li class="px-4 py-3" x-data="{ editing: false, confirmDelete: false, completing: false }">
-                <div x-show="!editing" class="flex items-start gap-3">
-                  {# Ticking it opens the completion form below; unticking it is the same as Cancel #}
-                  <div class="pt-0.5">
-                    <input type="checkbox" x-model="completing" class="size-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
-                      aria-label="Mark done: {{ task.title }}" @change="if (!$el.checked) $refs.completeForm.reset()">
-                  </div>
+      {% if q %}
+        <section class="bg-white rounded-lg shadow-sm">
+          <div class="flex flex-wrap items-start gap-3 px-4 py-3 border-b border-gray-200">
+            <div class="flex-1 min-w-0">
+              <h2 class="font-bold break-words">Closest to “{{ q }}”</h2>
+              <p class="mt-0.5 text-xs text-gray-500">Found by meaning, closest first. Done tasks are included.</p>
+            </div>
+            <a href="/tasks" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50">Clear</a>
+          </div>
 
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm break-words">{{ task.title }}</p>
-
-                    {% if task.notes %}
-                      {# Cut to 3 lines; Show more, or a click on the text, shows all of it #}
-                      <div x-data="clampedText">
-                        <p x-ref="text" class="mt-0.5 text-xs text-gray-500 whitespace-pre-wrap break-words line-clamp-3"
-                          :class="{ 'line-clamp-3': !expanded, 'cursor-pointer': clamped && !expanded }"
-                          @click="if (clamped) expanded = true">{{ task.notes }}</p>
-                        <button type="button" x-cloak x-show="clamped" class="mt-0.5 text-xs text-sky-600 hover:underline"
-                          :aria-expanded="expanded" @click="expanded = !expanded" x-text="expanded ? 'Show less' : 'Show more'">Show more</button>
-                      </div>
-                    {% endif %}
-
-                    <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-                      {{ taskLabels(task) }}
-
-                      {% if task.chatId %}
-                        <a href="/chat/{{ task.chatId }}" class="min-w-0 max-w-full truncate underline hover:text-gray-800">From {{ task.chatTitle or 'a chat' }}</a>
-                      {% endif %}
-
-                      <span class="flex-1"></span>
-
-                      {% call deleteControls(task) %}
-                        <button type="button" class="px-2 py-1 rounded hover:bg-gray-100 hover:text-gray-800"
-                          @click="editing = true; $nextTick(() => $refs.editForm.elements.title.focus())">Edit</button>
-                      {% endcall %}
-                    </div>
-
-                    {# Completing takes a second click, so a stray tick can be cancelled. The note
-                       box doesn't take focus, so a phone's keyboard only comes up for a note.
-                       Cancel unticks the box and clears what was typed. #}
-                    <form x-cloak x-show="completing" x-ref="completeForm" method="post" action="/tasks/{{ task.id }}/done" class="mt-2 space-y-2"
-                      @keydown.escape="completing = false; $refs.completeForm.reset()">
-                      <input type="hidden" name="done" value="true">
-                      <label class="sr-only" for="task-{{ task.id }}-complete-note">Completion note</label>
-                      <textarea id="task-{{ task.id }}-complete-note" name="doneNote" rows="2" maxlength="{{ maxDoneNoteLength }}"
-                        placeholder="Completion note (optional): how it went, anything left over, or why it no longer applies"
-                        class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"></textarea>
-
-                      <div class="flex justify-end gap-2">
-                        <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="completing = false; $refs.completeForm.reset()">Cancel</button>
-                        <button type="submit" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md">Complete</button>
-                      </div>
-                    </form>
-                  </div>
-                </div>
-
-                {# Cancel puts the form back as it was #}
-                <form x-cloak x-show="editing" x-ref="editForm" method="post" action="/tasks/{{ task.id }}/update" class="space-y-2"
-                  @keydown.escape="editing = false; $refs.editForm.reset()">
-                  <div class="flex flex-wrap items-center gap-2">
-                    {{ taskFields(task, 'task-' + task.id) }}
-                  </div>
-
-                  <label class="sr-only" for="task-{{ task.id }}-notes">Notes</label>
-                  <textarea id="task-{{ task.id }}-notes" name="notes" rows="2" maxlength="4000" placeholder="Notes"
-                    class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">{{ task.notes }}</textarea>
-
-                  <div class="flex justify-end gap-2">
-                    <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="editing = false; $refs.editForm.reset()">Cancel</button>
-                    <button type="submit" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md">Save</button>
-                  </div>
-                </form>
-              </li>
-            {% endfor %}
-          </ul>
-        {% endif %}
-      </section>
-
-      {% if doneCount > 0 %}
-        <details class="bg-white rounded-lg shadow-sm">
-          <summary class="px-4 py-3 text-sm font-bold cursor-pointer select-none">
-            Done <span class="font-normal text-gray-500">· {{ doneCount }}</span>
-          </summary>
-
-          <ul class="border-t border-gray-200 divide-y divide-gray-100">
-            {% for task in doneTasks %}
-              <li class="flex items-start gap-3 px-4 py-3" x-data="{ confirmDelete: false, editingNote: false }">
-                {# Unticking it puts it back on the list, and removes its completion note #}
-                <form method="post" action="/tasks/{{ task.id }}/done" class="pt-0.5">
-                  <input type="hidden" name="done" value="false">
-                  <input type="checkbox" checked class="size-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
-                    aria-label="Put back on the list: {{ task.title }}" @change="$el.form.submit()">
-                </form>
-
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm text-gray-500 line-through break-words">{{ task.title }}</p>
-
-                  {% if task.doneNote %}
-                    {# Cut to 3 lines, as a task's notes are #}
-                    <div x-show="!editingNote" x-data="clampedText">
-                      <p x-ref="text" class="mt-0.5 text-xs text-gray-600 whitespace-pre-wrap break-words line-clamp-3"
-                        :class="{ 'line-clamp-3': !expanded, 'cursor-pointer': clamped && !expanded }"
-                        @click="if (clamped) expanded = true">{{ task.doneNote }}</p>
-                      <button type="button" x-cloak x-show="clamped" class="mt-0.5 text-xs text-sky-600 hover:underline"
-                        :aria-expanded="expanded" @click="expanded = !expanded" x-text="expanded ? 'Show less' : 'Show more'">Show more</button>
-                    </div>
-                  {% endif %}
-
-                  {# Cancel puts the note back as it was; saving it empty removes it #}
-                  <form x-cloak x-show="editingNote" x-ref="noteForm" method="post" action="/tasks/{{ task.id }}/note" class="mt-2 space-y-2"
-                    @keydown.escape="editingNote = false; $refs.noteForm.reset()">
-                    <label class="sr-only" for="task-{{ task.id }}-done-note">Completion note</label>
-                    <textarea id="task-{{ task.id }}-done-note" name="doneNote" rows="2" maxlength="{{ maxDoneNoteLength }}"
-                      placeholder="How it went, anything left over, or why it no longer applies"
-                      class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">{{ task.doneNote }}</textarea>
-
-                    <div class="flex justify-end gap-2">
-                      <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="editingNote = false; $refs.noteForm.reset()">Cancel</button>
-                      <button type="submit" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md">Save</button>
-                    </div>
-                  </form>
-
-                  <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
-                    <span>Done {{ task.doneLabel }}</span>
-                    <span class="flex-1"></span>
-                    {% call deleteControls(task) %}
-                      <button type="button" x-show="!editingNote" class="px-2 py-1 rounded hover:bg-gray-100 hover:text-gray-800"
-                        @click="editingNote = true; $nextTick(() => $refs.noteForm.elements.doneNote.focus())">{{ 'Edit note' if task.doneNote else 'Add note' }}</button>
-                    {% endcall %}
-                  </div>
-                </div>
-              </li>
-            {% endfor %}
-          </ul>
-
-          {% if doneCount > doneTasks.length %}
-            <p class="px-4 py-2 text-xs text-gray-500 border-t border-gray-100">Showing the {{ doneTasks.length }} done most recently.</p>
+          {% if searchError %}
+            <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">{{ searchError }}</div>
+          {% elif results.length == 0 %}
+            <p class="px-4 py-3 text-sm text-gray-500">There are no tasks to search.</p>
+          {% else %}
+            <ul class="divide-y divide-gray-100">
+              {% for task in results %}
+                {% if task.doneAt %}
+                  {{ doneTaskItem(task, returnTo) }}
+                {% else %}
+                  {{ openTaskItem(task, returnTo) }}
+                {% endif %}
+              {% endfor %}
+            </ul>
           {% endif %}
-        </details>
+        </section>
+      {% else %}
+        <section class="bg-white rounded-lg shadow-sm">
+          {% if openTasks.length == 0 %}
+            <p class="p-4 text-sm text-gray-500">Nothing to do.</p>
+          {% else %}
+            <ul class="divide-y divide-gray-100">
+              {% for task in openTasks %}
+                {{ openTaskItem(task, returnTo) }}
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </section>
+
+        {% if doneCount > 0 %}
+          <details class="bg-white rounded-lg shadow-sm">
+            <summary class="px-4 py-3 text-sm font-bold cursor-pointer select-none">
+              Done <span class="font-normal text-gray-500">· {{ doneCount }}</span>
+            </summary>
+
+            <ul class="border-t border-gray-200 divide-y divide-gray-100">
+              {% for task in doneTasks %}
+                {{ doneTaskItem(task, returnTo) }}
+              {% endfor %}
+            </ul>
+
+            {% if doneCount > doneTasks.length %}
+              <p class="px-4 py-2 text-xs text-gray-500 border-t border-gray-100">Showing the {{ doneTasks.length }} done most recently.</p>
+            {% endif %}
+          </details>
+        {% endif %}
       {% endif %}
     </div>
   </div>

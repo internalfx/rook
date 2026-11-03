@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Form controls are restyled one at a time with the form-* classes (form-select gives a select
+   a plain box and its own arrow); the rest keep the browser's look */
+@plugin "@tailwindcss/forms" {
+  strategy: "class";
+}
+
 table tr td {
   vertical-align: middle;
 }

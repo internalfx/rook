@@ -47,8 +47,9 @@ const updateTaskRow = db.query(`
   WHERE id = $id
 `)
 const selectSearchCandidates = db.query(`
-  SELECT ${taskColumns}, tasks.embedding, tasks.embeddingModel
-  FROM tasks WHERE tasks.doneAt IS NULL OR $includeDone = 1
+  SELECT ${taskColumns}, chats.title AS chatTitle, tasks.embedding, tasks.embeddingModel
+  FROM tasks LEFT JOIN chats ON chats.id = tasks.chatId
+  WHERE tasks.doneAt IS NULL OR $includeDone = 1
   ORDER BY tasks.doneAt IS NOT NULL, ${openOrder}
 `)
 const updateEmbedding = db.query(`
@@ -271,8 +272,8 @@ export const searchTasks = function ({ query, includeDone = false, limit = 20 })
 }
 
 // The tasks closest in meaning to `query` (by their title, notes and completion note), closest
-// first, each with its similarity as `score`. Asks Lemonade, so it can be slow or fail; see
-// services/embeddings.js.
+// first, each with its similarity as `score` and the title of the chat it was added in
+// (chatTitle), if any. Asks Lemonade, so it can be slow or fail; see services/embeddings.js.
 export const searchByMeaning = async function ({ query, model, includeDone = false, limit = 5, signal }) {
   const rows = selectSearchCandidates.all({ includeDone: includeDone ? 1 : 0 })
 
