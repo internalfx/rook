@@ -5,8 +5,8 @@ import images from './images.js'
 
 const selectChats = db.query(`SELECT id, title, updatedAt FROM chats ORDER BY updatedAt DESC`)
 const selectChat = db.query(`SELECT * FROM chats WHERE id = $id`)
-const selectChatsSince = db.query(`
-  SELECT id, title, updatedAt FROM chats WHERE updatedAt > $since ORDER BY updatedAt DESC LIMIT $limit
+const selectRecentChats = db.query(`
+  SELECT id, title, updatedAt FROM chats ORDER BY updatedAt DESC LIMIT $limit
 `)
 const insertChat = db.query(`
   INSERT INTO chats (id, title, createdAt, updatedAt)
@@ -37,9 +37,9 @@ export const getChat = function (id) {
   return selectChat.get({ id }) ?? null
 }
 
-// The chats with activity after `since` (an ISO date), most recent first
-export const listChatsSince = function (since, limit) {
-  return selectChatsSince.all({ since, limit })
+// The `limit` most recently active chats, most recent first, for briefings to look over
+export const listRecentChats = function (limit) {
+  return selectRecentChats.all({ limit })
 }
 
 // toolCalls comes back parsed: an array in the OpenAI format, or null. So does imageIds: the ids
@@ -130,7 +130,7 @@ export const deleteChat = function (id) {
 export default {
   listChats,
   getChat,
-  listChatsSince,
+  listRecentChats,
   getMessages,
   createChat,
   touchChat,

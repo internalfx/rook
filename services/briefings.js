@@ -14,9 +14,8 @@ import { maxCallsPerTool, maxRounds, describeCallLimit } from '../ai-tools/limit
 import prompts from '../prompts.js'
 
 // A briefing runs the chat model in the background, with no one watching: it looks over the
-// memories, tasks, recent chats and Slack conversations picked in Settings, and what the previous
-// briefing said, tidies the memories and
-// tasks, and writes the user a short overview. Discuss on the Briefing page starts a chat with
+// memories, tasks, recent chats and Slack conversations picked in Settings, tidies the memories
+// and tasks, and writes the user a short overview. Discuss on the Briefing page starts a chat with
 // that overview as the model's first message. For something that matters now, it can notify the
 // user (services/notifications.js). Briefings run on a schedule (see runIfDue) or when asked for.
 //
@@ -26,13 +25,14 @@ import prompts from '../prompts.js'
 // How many notifications one briefing can send
 const maxNotifications = 2
 
-// Older briefings are deleted
-const keptBriefings = 5
+// The latest briefing and one before it are kept; older ones are deleted
+const keptBriefings = 2
 
 // What the model is shown
 const recentMemoryLimit = 30
 const openTaskLimit = 50
-const recentChatLimit = 5
+// The most recently active chats, whatever their age, each with its last messages
+const recentChatLimit = 10
 // The tasks done in the last week, with their completion notes, so it knows what's been
 // finished or dropped
 const doneTaskLookBack = 1000 * 60 * 60 * 24 * 7
@@ -43,9 +43,6 @@ const messageCharLimit = 600
 // How far back it sees the notifications sent, so it doesn't repeat one from a few briefings ago
 const notificationLookBack = 1000 * 60 * 60 * 24 * 14
 const historyLimit = 20
-
-// How far back the first briefing looks for chats; later ones look back to the last briefing
-const firstLookBack = 1000 * 60 * 60 * 24 * 7
 
 // Each picked Slack conversation gives its newest messages, whatever their age, and the replies to
 // its newest threads
@@ -78,8 +75,6 @@ const selectFinished = db.query(`
   SELECT * FROM briefings WHERE status != 'running' ORDER BY startedAt DESC LIMIT $limit OFFSET $offset
 `)
 const selectBriefing = db.query(`SELECT * FROM briefings WHERE id = $id`)
-const selectLastDone = db.query(`SELECT startedAt FROM briefings WHERE status = 'done' ORDER BY startedAt DESC LIMIT 1`)
-const selectPreviousDone = db.query(`SELECT * FROM briefings WHERE status = 'done' ORDER BY startedAt DESC LIMIT 1`)
 const selectLastStarted = db.query(`SELECT startedAt FROM briefings ORDER BY startedAt DESC LIMIT 1`)
 const deleteOldBriefings = db.query(`
   DELETE FROM briefings WHERE id NOT IN (SELECT id FROM briefings ORDER BY startedAt DESC LIMIT $keep)
@@ -134,11 +129,9 @@ const formatDay = function (iso) {
   return iso.slice(0, 10)
 }
 
-// "Sunday, November 1, 2026 at 9:58 AM", or with `short`, "Nov 1, 2026, 9:58 AM", in the
-// server's time zone, which is the owner's
-const describeWhen = function (iso, short = false) {
-  const dateStyle = short ? `medium` : `full`
-  return new Date(iso).toLocaleString(`en-US`, { dateStyle, timeStyle: `short` })
+// "Nov 1, 2026, 9:58 AM", in the server's time zone, which is the owner's
+const describeWhen = function (iso) {
+  return new Date(iso).toLocaleString(`en-US`, { dateStyle: `medium`, timeStyle: `short` })
 }
 
 const shorten = function (text, limit = messageCharLimit) {
@@ -240,17 +233,6 @@ const describeChat = function (chat) {
   return `### ${chat.title ?? `Untitled chat`} (last active ${formatDay(chat.updatedAt)})\n${lines.join(`\n`)}`
 }
 
-// The last briefing that finished, and what it told the user
-const describePreviousBriefing = function () {
-  const previous = selectPreviousDone.get()
-
-  if (previous == null) {
-    return `There hasn't been a briefing before this one.`
-  }
-
-  return `From ${describeWhen(previous.startedAt)}.\n\nOverview: ${previous.overview ?? `(none)`}`
-}
-
 // Every notification from the last two weeks, whichever briefing sent it
 const describeRecentNotifications = function () {
   const since = new Date(Date.now() - notificationLookBack).toISOString()
@@ -261,26 +243,24 @@ const describeRecentNotifications = function () {
   }
 
   const lines = sent.map(function (notification) {
-    return `- ${describeWhen(notification.createdAt, true)}: "${notification.title}": ${notification.message}`
+    return `- ${describeWhen(notification.createdAt)}: "${notification.title}": ${notification.message}`
   })
 
   return `Newest first (up to ${historyLimit}):\n${lines.join(`\n`)}`
 }
 
-// The chats since the last briefing that finished, or from the past week before there was one
+// The most recently active chats, whatever their age, so the model always sees what's been talked
+// about lately
 const describeRecentChats = function () {
-  const lastDone = selectLastDone.get()
-  const since = lastDone?.startedAt ?? new Date(Date.now() - firstLookBack).toISOString()
-
-  const recent = chats.listChatsSince(since, recentChatLimit)
+  const recent = chats.listRecentChats(recentChatLimit)
 
   if (recent.length === 0) {
-    return `There haven't been any chats since ${formatDay(since)}.`
+    return `There are no chats yet.`
   }
 
   const sections = recent.map(describeChat)
 
-  return `Chats since ${formatDay(since)}, most recent first (up to ${recentChatLimit}, each with its last ${messagesPerChat} messages):\n\n${sections.join(`\n\n`)}`
+  return `The most recently active chats, most recent first (up to ${recentChatLimit}, each with its last ${messagesPerChat} messages). Some may be old; each says when it was last active.\n\n${sections.join(`\n\n`)}`
 }
 
 // The newest messages in each picked Slack conversation, whatever their age, so the model always
@@ -356,7 +336,6 @@ const buildContext = async function (signal) {
     tools.describeCurrentTime(),
     `## Memories\n\n${describeMemories()}`,
     `## Tasks\n\n${describeTasks()}`,
-    `## Your previous briefing\n\n${describePreviousBriefing()}`,
     `## Notifications you've sent recently\n\n${describeRecentNotifications()}`,
     `## Recent chats\n\n${describeRecentChats()}`,
   ]

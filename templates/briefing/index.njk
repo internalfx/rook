@@ -20,11 +20,22 @@
         this.watch()
       },
 
+      // Watches until the briefing ends, then reloads to show it. If the stream is cut off (the
+      // page is being left, or the server restarted) it watches again after a moment. Reloading
+      // then would take the place of a link just clicked: Safari cuts a page's requests off as
+      // soon as it starts leaving.
       async watch () {
-        try {
-          const response = await fetch(`/briefing/stream`)
-          await this.readStream(response)
-        } catch (err) {}
+        while (true) {
+          try {
+            const response = await fetch(`/briefing/stream`)
+            // Everything so far comes again
+            this.messages = []
+            await this.readStream(response)
+            break
+          } catch (err) {
+            await new Promise((resolve) => setTimeout(resolve, 2000))
+          }
+        }
 
         window.location.reload()
       },
@@ -232,7 +243,7 @@
         <section class="bg-white rounded-lg shadow-sm">
           <div class="px-4 py-3 border-b border-gray-200">
             <h2 class="font-bold">{{ latest.when }}</h2>
-            <p class="mt-0.5 text-xs text-gray-500">{{ 'Scheduled' if latest.startedBy == 'schedule' else 'Asked for' }} · {{ latest.ago }}</p>
+            <p class="mt-0.5 text-xs text-gray-500">{{ 'Scheduled' if latest.startedBy == 'schedule' else 'Asked for' }} · {{ latest.ago }}{% if latest.took %} · took {{ latest.took }}{% endif %}</p>
           </div>
 
           {{ briefingBody(latest) }}
@@ -254,7 +265,7 @@
                 <summary class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 cursor-pointer select-none">
                   <span class="text-sm font-semibold">{{ briefing.when }}</span>
                   <span class="text-xs text-gray-500">
-                    {{ briefing.ago }}{% if briefing.status == 'failed' %} · failed{% endif %}
+                    {{ briefing.ago }}{% if briefing.took %} · took {{ briefing.took }}{% endif %}{% if briefing.status == 'failed' %} · failed{% endif %}
                   </span>
                 </summary>
 

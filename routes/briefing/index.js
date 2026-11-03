@@ -1,7 +1,27 @@
 import dayjs from 'dayjs'
 import briefings from '../../services/briefings.js'
 
-// A briefing as the page shows it: when it ran, in words, and how many tools it called
+// How long something took, e.g. "45 s", "1 min 37 s", or "1 h 3 min" once it's an hour or more
+const describeDuration = function (ms) {
+  const totalSeconds = Math.round(ms / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  if (hours > 0) {
+    return `${hours} h ${minutes} min`
+  }
+
+  if (minutes > 0) {
+    return `${minutes} min ${seconds} s`
+  }
+
+  return `${seconds} s`
+}
+
+// A briefing as the page shows it: when it ran, in words, how long it took, and how many tools it
+// called. Only a finished one has a time: one that failed when the server restarted was marked
+// finished at the restart, which can be long after it stopped.
 const toPageBriefing = function (briefing) {
   const started = dayjs(briefing.startedAt)
 
@@ -9,10 +29,18 @@ const toPageBriefing = function (briefing) {
     return message.role === `tool`
   })
 
+  let took = null
+
+  if (briefing.status === `done` && briefing.finishedAt != null) {
+    const finished = dayjs(briefing.finishedAt)
+    took = describeDuration(finished.diff(started))
+  }
+
   return {
     ...briefing,
     when: started.format(`dddd D MMMM, h:mm A`),
     ago: started.fromNow(),
+    took,
     stepCount: toolMessages.length,
   }
 }
@@ -31,7 +59,8 @@ const buildTranscriptsJSON = function (briefingList) {
 
 export const GET = async function (ctx) {
   const latest = briefings.getLatest()
-  const earlier = briefings.listEarlier(10)
+  // Only one earlier briefing is kept (see keptBriefings in services/briefings.js)
+  const earlier = briefings.listEarlier(1)
   const nextDue = briefings.getNextDue()
 
   // Before rendering, so this page's own nav item doesn't show the dot
