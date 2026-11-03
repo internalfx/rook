@@ -2,8 +2,8 @@ import cuid from 'cuid'
 import db from './db.js'
 import { rankByMeaning } from './embeddings.js'
 
-// Tasks: things the owner needs to get done. Open tasks are sorted most important first: by
-// priority, then by due date (soonest first, undated last), then oldest first. The model can
+// Tasks: things the owner needs to get done. Open tasks are sorted soonest due first: by due
+// date (overdue first, undated last), then by priority, then oldest first. The model can
 // find them by keyword (searchTasks) or by meaning (searchByMeaning). A done task can have a
 // completion note (doneNote): how it went, or why it no longer applied. Done tasks are deleted
 // doneKeptDays after they're done (deleteOldDone, run hourly by services/cron.js).
@@ -19,8 +19,9 @@ export const doneKeptDays = 30
 const taskColumns = `tasks.id, tasks.title, tasks.notes, tasks.priority, tasks.dueDate, tasks.doneAt, tasks.doneNote, tasks.chatId, tasks.createdAt, tasks.updatedAt`
 
 const openOrder = `
+  tasks.dueDate IS NULL, tasks.dueDate,
   CASE tasks.priority WHEN 'high' THEN 0 WHEN 'normal' THEN 1 ELSE 2 END,
-  tasks.dueDate IS NULL, tasks.dueDate, tasks.createdAt
+  tasks.createdAt
 `
 
 const selectOpen = db.query(`
@@ -155,7 +156,7 @@ export const describeForModel = function (task) {
   return text
 }
 
-// The tasks still to do, most important first; each has the title of the chat it was added in
+// The tasks still to do, soonest due first; each has the title of the chat it was added in
 // (chatTitle), if any
 export const listOpen = function () {
   return selectOpen.all()
@@ -245,7 +246,7 @@ export const deleteOldDone = function () {
 }
 
 // Tasks whose title, notes or completion note contain the words in `query`, those with the most
-// of the words first; ties keep the list's order (open before done, most important first)
+// of the words first; ties keep the list's order (open before done, soonest due first)
 export const searchTasks = function ({ query, includeDone = false, limit = 20 }) {
   const words = query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(function (word) {
     return word.length >= 2

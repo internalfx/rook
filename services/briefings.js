@@ -171,7 +171,7 @@ const describeTaskLines = function (taskList) {
   return lines.join(`\n`)
 }
 
-// The open tasks, most important first, then those done in the last week, with their ids so it
+// The open tasks, soonest due first, then those done in the last week, with their ids so it
 // can change them
 const describeTasks = function () {
   if (tools.isTasksOn() === false) {
@@ -185,7 +185,7 @@ const describeTasks = function () {
   if (openTasks.length > 0) {
     const listed = openTasks.slice(0, openTaskLimit)
 
-    text = `The tasks still to do, most important first (up to ${openTaskLimit}; find others with find_tasks):\n${describeTaskLines(listed)}`
+    text = `The tasks still to do, soonest due first (up to ${openTaskLimit}; find others with find_tasks):\n${describeTaskLines(listed)}`
 
     if (openTasks.length > listed.length) {
       text = `${text}\n…and ${openTasks.length - listed.length} more.`

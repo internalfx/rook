@@ -286,7 +286,7 @@ const runFindTasks = async function ({ argumentsText, toolSettings, signal }) {
   }
 
   const listed = taskList.slice(0, maxListedTasks)
-  let content = `The to-do list, most important first${includeDone ? `, then the tasks done most recently` : ``}:\n\n${describeTaskList(listed)}`
+  let content = `The to-do list, soonest due first${includeDone ? `, then the tasks done most recently` : ``}:\n\n${describeTaskList(listed)}`
 
   if (taskList.length > listed.length) {
     content = `${content}\n\n…and ${taskList.length - listed.length} more. Search with a query to find others.`
