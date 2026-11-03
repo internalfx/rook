@@ -109,6 +109,7 @@ export default {
   getToolDefinitions,
   getWebDomains: webPages.getWebDomains,
   isWebPagesOn: webPages.isWebPagesOn,
+  getPageReaderModel: webPages.getPageReaderModel,
   getReadableDomains: webPages.getReadableDomains,
   isWebSearchOn: webSearch.isWebSearchOn,
   getEmbeddingModel: memories.getEmbeddingModel,

@@ -73,12 +73,18 @@ export const hasLabel = function (model, label) {
   return labels.includes(label)
 }
 
-// Models that can hold a conversation, e.g. not image or speech models
+// MinerU-HTML models pick out a web page's main content, for read_web_page (see labelHTML).
+// Lemonade has no label for them (it labels them "chat"), so they're known by name.
+export const isPageReaderModel = function (model) {
+  return /mineru-html/i.test(model.id)
+}
+
+// Models that can hold a conversation, e.g. not image or speech models, nor page readers
 export const listChatModels = async function () {
   const models = await listModels()
 
   const chatModels = models.filter(function (model) {
-    return hasLabel(model, `chat`)
+    return hasLabel(model, `chat`) && isPageReaderModel(model) === false
   })
 
   return chatModels
@@ -307,9 +313,43 @@ export const embed = async function ({ model, inputs, signal }) {
   return vectors
 }
 
+// A MinerU-HTML `model`'s labels for a page's blocks (`html`, from ai-tools/mainContent.js), as
+// it answers them, e.g. "<answer>1main2other</answer>", read without sampling. Returns
+// { text, isCutOff }, isCutOff being true when it stopped before the end: MinerU-HTML allows up
+// to 8 tokens for each of the `blockCount` blocks. Loading the model and reading a big page can
+// take a while, so the limit is slowRequestLimit; pass `signal` to cancel.
+export const labelHTML = async function ({ model, html, blockCount, signal }) {
+  const url = `${config.lemonade.host}/api/v1/chat/completions`
+
+  const payload = {
+    model,
+    temperature: 0,
+    max_tokens: blockCount * 8 + 64,
+    messages: [{ role: `user`, content: prompts.pageReader.mineru({ html }) }],
+  }
+
+  const response = await fetch(url, {
+    method: `POST`,
+    headers: getHeaders(),
+    body: JSON.stringify(payload),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(slowRequestLimit)]),
+    timeout: false,
+  })
+
+  if (response.ok === false) {
+    throw await failure(`page reader`, response)
+  }
+
+  const body = await response.json()
+  const choice = body.choices?.[0]
+
+  return { text: (choice?.message?.content ?? ``).trim(), isCutOff: choice?.finish_reason === `length` }
+}
+
 export default {
   listModels,
   hasLabel,
+  isPageReaderModel,
   listChatModels,
   listImageModels,
   listEmbeddingModels,
@@ -318,4 +358,5 @@ export default {
   writeTitle,
   generateImage,
   embed,
+  labelHTML,
 }

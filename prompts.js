@@ -36,6 +36,24 @@ export const briefing = {
   instructions: `You're preparing a short status update for the user. Look at what you know about them and what's been happening. If memories are duplicated, out of date or contradict each other, fix them. If a recent chat shows the user has done a task, mark it done, with a completion note if the chat says how it went or why it no longer applies; if it shows something they need to do that isn't on their list, add it. Use notify_user only for what's new or noteworthy, never for something you've already notified them about recently unless it has become more urgent. When you're done, reply with a short message, written to the user; they can start a chat from it.`,
 }
 
+// The model read_web_page can have pick out a page's main content (Settings → Web pages → Page
+// reader). It's trained on this wording, so it's left as its makers wrote it.
+export const pageReader = {
+  // What a MinerU-HTML model is asked to label the page's blocks with; `html` is the blocks (see
+  // ai-tools/mainContent.js). MinerU-HTML v1.1's "short_compact" prompt.
+  mineru: ({ html }) => `As an HTML expert, classify elements with "_item_id" as "main" or "other", keeping only the main content and removing nav, metadata, etc.
+Guidelines:
+"Main": Includes primary content like article text, images in the article, original posts in forums, Q&A questions, and answers.
+"Other": Includes navigation, metadata, ads, user info, and related content (e.g., sidebars, timestamps, suggested articles).
+Output Format:
+Return each _item_id and its corresponding category in the following format:
+{_item_id}{category}{_item_id}{category}...
+Here, {_item_id} may be 1, 2, 3..., and {category} is either "main" or "other", as shown in the example below:
+"1main2other3other4main"
+Input HTML:
+${html}`,
+}
+
 // Each tool's description, and its parameters' descriptions, by tool name. These are what the
 // model reads to decide when to use a tool and what to give it. A parameter missing here has no
 // description (its choices are listed for the model instead). The briefing's own tool,
@@ -207,5 +225,6 @@ export default {
   chat,
   memories,
   briefing,
+  pageReader,
   tools,
 }

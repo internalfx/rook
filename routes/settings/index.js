@@ -12,6 +12,9 @@ import { formatContextLength } from '../../lib/format.js'
 // Value of the "Off" choice for the image model
 const noImageModel = `none`
 
+// Value of the "Built in" choice for the page reader: pages are converted directly
+const noPageReaderModel = `none`
+
 // The image size choices, in the order of tools.imageSizes
 const imageSizeNames = [`Small`, `Medium`, `Large`]
 
@@ -44,13 +47,15 @@ export const GET = async function (ctx) {
   let chatModels = []
   let imageModels = []
   let embeddingModels = []
+  let pageReaderModels = []
   let modelsError = null
 
   try {
     const models = await lemonade.listModels()
 
+    // Page readers are labelled "chat" too, but can't hold a conversation
     const chatModelList = models.filter(function (model) {
-      return lemonade.hasLabel(model, `chat`)
+      return lemonade.hasLabel(model, `chat`) && lemonade.isPageReaderModel(model) === false
     })
 
     const imageModelList = models.filter(function (model) {
@@ -61,9 +66,12 @@ export const GET = async function (ctx) {
       return lemonade.hasLabel(model, `embeddings`)
     })
 
+    const pageReaderModelList = models.filter(lemonade.isPageReaderModel)
+
     chatModels = chatModelList.map(toModelOption)
     imageModels = imageModelList.map(toModelOption)
     embeddingModels = embeddingModelList.map(toModelOption)
+    pageReaderModels = pageReaderModelList.map(toModelOption)
   } catch (err) {
     console.error(err)
     modelsError = err.message
@@ -75,6 +83,7 @@ export const GET = async function (ctx) {
   // The text box shows one site per line
   const webDomainsText = tools.getWebDomains().join(`\n`)
   const isWebPagesOn = tools.isWebPagesOn()
+  const pageReaderModel = tools.getPageReaderModel()
   const isWebSearchOn = tools.isWebSearchOn()
   const embeddingModel = tools.getEmbeddingModel()
   // The switch shows what was chosen, even while there's no embedding model to make it work
@@ -140,6 +149,10 @@ export const GET = async function (ctx) {
     isImageModelListed: isListed(imageModels, imageModel),
     webDomainsText,
     isWebPagesOn,
+    pageReaderModels,
+    pageReaderModel,
+    noPageReaderModel,
+    isPageReaderModelListed: isListed(pageReaderModels, pageReaderModel),
     isWebSearchOn,
     embeddingModels,
     embeddingModel,
@@ -170,6 +183,7 @@ export const POST = async function (ctx) {
       webDomains: joi.string(),
       // The switch is a checkbox, which a form leaves out when it's off
       webPagesOn: joi.boolean(),
+      pageReaderModel: joi.string().trim(),
       webSearchOn: joi.boolean(),
       memoriesOn: joi.boolean(),
       embeddingModel: joi.string().trim(),
@@ -200,8 +214,21 @@ export const POST = async function (ctx) {
       return model.id === args.chatModel
     })
 
-    if (chatModel == null || lemonade.hasLabel(chatModel, `chat`) === false) {
+    if (chatModel == null || lemonade.hasLabel(chatModel, `chat`) === false || lemonade.isPageReaderModel(chatModel)) {
       ctx.addFlash(`"${args.chatModel}" isn't a chat model on the Lemonade server.`, `error`)
+      return ctx.redirect(`/settings`)
+    }
+  }
+
+  const usePagesDirectly = args.pageReaderModel === noPageReaderModel
+
+  if (args.pageReaderModel != null && usePagesDirectly === false) {
+    const pageReaderModel = models.find(function (model) {
+      return model.id === args.pageReaderModel
+    })
+
+    if (pageReaderModel == null || lemonade.isPageReaderModel(pageReaderModel) === false) {
+      ctx.addFlash(`"${args.pageReaderModel}" isn't a MinerU-HTML model on the Lemonade server.`, `error`)
       return ctx.redirect(`/settings`)
     }
   }
@@ -290,6 +317,12 @@ export const POST = async function (ctx) {
     settings.unset(`webPagesOff`)
   } else {
     settings.set(`webPagesOff`, true)
+  }
+
+  if (usePagesDirectly) {
+    settings.unset(`pageReaderModel`)
+  } else if (args.pageReaderModel != null) {
+    settings.set(`pageReaderModel`, args.pageReaderModel)
   }
 
   if (args.webSearchOn === true) {

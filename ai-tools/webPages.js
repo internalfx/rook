@@ -1,4 +1,5 @@
 import settings from '../services/settings.js'
+import lemonade from '../services/lemonade.js'
 import webReader from './webReader.js'
 import { extrasFor } from './sites.js'
 import { readToolUrl } from './arguments.js'
@@ -16,6 +17,14 @@ export const getWebDomains = function () {
 // list of sites is kept for when they're switched back on.
 export const isWebPagesOn = function () {
   return settings.get(`webPagesOff`) !== true
+}
+
+// The MinerU-HTML model that picks out pages' main content (see webReader.readPage), or null to
+// convert them directly. A model saved that isn't one (a page reader rook no longer uses) counts
+// as none.
+export const getPageReaderModel = function () {
+  const model = settings.get(`pageReaderModel`) ?? null
+  return model != null && lemonade.isPageReaderModel({ id: model }) ? model : null
 }
 
 // The sites read_web_page may read right now: none while web pages are switched off
@@ -62,8 +71,23 @@ const buildReadWebPageTool = function () {
 // The longest page read_web_page hands the chat model
 const maxPageChars = 50000
 
+// How the page reader did, for the line under the page's URL (also seen in the tool's row in
+// the chat), or null when there's none
+const describeReader = function (reader) {
+  if (reader == null) {
+    return null
+  }
+
+  if (reader.failed != null) {
+    return `${reader.model} couldn't read it (${reader.failed}), so it was converted directly.`
+  }
+
+  const unfinished = reader.isUnfinished ? ` (it stopped before labelling them all)` : ``
+  return `Read with ${reader.model} in ${reader.seconds} s: kept ${reader.kept} of ${reader.total} blocks${unfinished}.`
+}
+
 // Downloads the page as Markdown (or the text file as it is)
-const runReadWebPage = async function ({ argumentsText, signal }) {
+const runReadWebPage = async function ({ argumentsText, toolSettings, signal }) {
   const url = readToolUrl(argumentsText)
 
   if (url == null || url.trim() === ``) {
@@ -77,7 +101,7 @@ const runReadWebPage = async function ({ argumentsText, signal }) {
     return { content: `Reading web pages is turned off in Settings.`, imageId: null }
   }
 
-  const page = await webReader.readPage({ url: url.trim(), domains, signal })
+  const page = await webReader.readPage({ url: url.trim(), domains, readerModel: toolSettings.pageReaderModel, signal })
 
   let body = page.markdown ?? page.text
 
@@ -85,15 +109,18 @@ const runReadWebPage = async function ({ argumentsText, signal }) {
     body = `${body.slice(0, maxPageChars)}\n\n[Cut off here: the page is longer than ${maxPageChars} characters.]`
   }
 
-  return { content: `Page: ${page.url}\n\n${body}`, imageId: null }
+  const readerLine = describeReader(page.reader)
+  const heading = readerLine == null ? `Page: ${page.url}` : `Page: ${page.url}\n${readerLine}`
+
+  return { content: `${heading}\n\n${body}`, imageId: null }
 }
 
 export const tools = [
   {
     name: `read_web_page`,
     // In every chat's tools, but offered only while Settings list some sites (see
-    // buildReadWebPageTool)
-    settings: () => ({}),
+    // buildReadWebPageTool). The page reader is as Settings had it when the message started.
+    settings: () => ({ pageReaderModel: getPageReaderModel() }),
     definition: buildReadWebPageTool,
     run: runReadWebPage,
   },
@@ -102,6 +129,7 @@ export const tools = [
 export default {
   getWebDomains,
   isWebPagesOn,
+  getPageReaderModel,
   getReadableDomains,
   tools,
 }

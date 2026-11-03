@@ -3,12 +3,15 @@
 import TurndownService from 'turndown'
 import { gfm } from 'turndown-plugin-gfm'
 import browser from './browser.js'
+import mainContent from './mainContent.js'
 import { matchDomain, extrasFor, describeDomains } from './sites.js'
 
 // Loads web pages for the read_web_page tool (in a headless browser, see browser.js) and turns
 // them into Markdown. Pages are mostly scripts, styles and embedded data (GitHub's run from a
 // few hundred KB to over a megabyte); those, and every attribute but links, are removed first,
-// then what's left is converted, which takes milliseconds.
+// then what's left is converted, which takes milliseconds. With a page reader chosen in Settings
+// (a MinerU-HTML model), the model first picks out the page's main content to convert, which
+// takes a few seconds, and images are kept too (mainContent.js).
 
 // Elements with nothing to read in them, on any site, including the page's own banner and
 // footer (matched by role, since page content can sit in a <header> or <footer> too)
@@ -87,6 +90,25 @@ const linkTarget = function ({ href, pageURL, domains }) {
   return target.href
 }
 
+// An image's src => its absolute URL, or null for one embedded in the page (a data: URI) or
+// missing
+const imageSource = function ({ src, pageURL }) {
+  if (src == null) {
+    return null
+  }
+
+  let source
+
+  try {
+    source = new URL(decodeEntities(src), pageURL)
+  } catch (err) {
+    return null
+  }
+
+  const isWebImage = source.protocol === `https:` || source.protocol === `http:`
+  return isWebImage ? source.href : null
+}
+
 // Collapses the whitespace between tags, except inside <pre> and <textarea>, where code keeps
 // its line breaks and indentation
 const collapseWhitespace = function (html) {
@@ -106,10 +128,13 @@ const collapseWhitespace = function (html) {
 }
 
 // Returns the page's HTML with only its content left. `domain` is the listed site the page is on.
-const cleanHTML = async function ({ pageHTML, pageURL, domain, domains }) {
+// With `keepImages`, images stay, with their src and alt.
+export const cleanHTML = async function ({ pageHTML, pageURL, domain, domains, keepImages = false }) {
   let rewriter = new HTMLRewriter()
 
-  const removedSelectors = [...removedElements, ...(extrasFor(domain).removeSelectors ?? [])]
+  const removedSelectors = [...removedElements, ...(extrasFor(domain).removeSelectors ?? [])].filter(function (selector) {
+    return keepImages === false || selector !== `img`
+  })
 
   for (const selector of removedSelectors) {
     rewriter = rewriter.on(selector, {
@@ -129,6 +154,10 @@ const cleanHTML = async function ({ pageHTML, pageURL, domain, domains }) {
   rewriter = rewriter.on(`*`, {
     element (element) {
       const href = element.tagName === `a` ? element.getAttribute(`href`) : null
+      // Without keepImages, images are removed above
+      const isImage = keepImages && element.tagName === `img`
+      const src = isImage ? element.getAttribute(`src`) : null
+      const alt = isImage ? element.getAttribute(`alt`) : null
       const names = [...element.attributes].map(([name]) => name)
 
       for (const name of names) {
@@ -139,6 +168,23 @@ const cleanHTML = async function ({ pageHTML, pageURL, domain, domains }) {
 
       if (target != null) {
         element.setAttribute(`href`, target)
+      }
+
+      // One that can't be shown outside the page (embedded in it, or with no src) goes
+      if (isImage) {
+        const source = imageSource({ src, pageURL })
+
+        if (source == null) {
+          element.remove()
+          return
+        }
+
+        element.setAttribute(`src`, source)
+
+        // Still encoded, as it came, so it goes back in as it was
+        if (alt != null && alt.trim() !== ``) {
+          element.setAttribute(`alt`, alt)
+        }
       }
     },
   })
@@ -183,10 +229,11 @@ turndown.addRule(`singleLineTableCell`, {
   },
 })
 
-// Icon-only links have no text left once images and svgs are removed
+// Icon-only links have no text left once images and svgs are removed. A link around an image
+// that's kept (see cleanHTML's keepImages) stays.
 turndown.addRule(`emptyLink`, {
   filter (node) {
-    return node.nodeName === `A` && node.textContent.trim() === ``
+    return node.nodeName === `A` && node.textContent.trim() === `` && node.querySelector(`img`) == null
   },
   replacement () {
     return ``
@@ -224,11 +271,13 @@ const describeFailure = function ({ status, statusText }) {
 }
 
 // Downloads a page on one of the listed `domains` (or a subdomain of one) and returns
-// { url, markdown } for an HTML page, or { url, text } for a text file, which needs no
-// conversion. `url` is where
-// the page ended up after redirects. Throws with a message for the model when the page can't
-// be read.
-export const readPage = async function ({ url, domains, signal }) {
+// { url, markdown, reader } for an HTML page, or { url, text } for a text file, which needs no
+// conversion. `url` is where the page ended up after redirects. With a `readerModel` (see
+// lemonade.isPageReaderModel), `reader` says how it went: { model, seconds, kept, total,
+// isUnfinished } (how many of the page's blocks it kept), or { model, failed } with the error
+// when it couldn't, and the page was converted directly instead. Without one, `reader` is null.
+// Throws with a message for the model when the page can't be read.
+export const readPage = async function ({ url, domains, readerModel = null, signal }) {
   let pageURL
 
   try {
@@ -265,12 +314,40 @@ export const readPage = async function ({ url, domains, signal }) {
   }
 
   const finalURL = page.url
-  const html = await cleanHTML({ pageHTML: page.html, pageURL: finalURL, domain, domains })
-  const markdown = turndown.turndown(html)
 
-  return { url: finalURL, markdown }
+  // Without a page reader, or when it can't read the page
+  const convertDirectly = async function () {
+    const html = await cleanHTML({ pageHTML: page.html, pageURL: finalURL, domain, domains })
+    return turndown.turndown(html)
+  }
+
+  if (readerModel == null) {
+    return { url: finalURL, markdown: await convertDirectly(), reader: null }
+  }
+
+  const started = Date.now()
+
+  try {
+    // MinerU-HTML reads the page as it came, with the class names and ids that help tell its
+    // parts apart; what it keeps is then cleaned and converted as usual, images included
+    const main = await mainContent.readMainContent({ pageHTML: page.html, model: readerModel, signal })
+    const mainHTML = await cleanHTML({ pageHTML: main.html, pageURL: finalURL, domain, domains, keepImages: true })
+    const seconds = Math.round((Date.now() - started) / 1000)
+    const reader = { model: readerModel, seconds, kept: main.kept, total: main.total, isUnfinished: main.isUnfinished }
+
+    return { url: finalURL, markdown: turndown.turndown(mainHTML), reader }
+  } catch (err) {
+    if (signal.aborted === true) {
+      throw err
+    }
+
+    // The page can still be read, just as it would be without a page reader
+    console.error(`Page reader ${readerModel} failed`, err)
+    return { url: finalURL, markdown: await convertDirectly(), reader: { model: readerModel, failed: err.message } }
+  }
 }
 
 export default {
+  cleanHTML,
   readPage,
 }

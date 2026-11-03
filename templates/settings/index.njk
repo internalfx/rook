@@ -293,6 +293,34 @@
                 x-init="$fitHeight($el)" @input="$fitHeight($el)"
                 class="w-full max-h-96 overflow-y-auto p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">{{ webDomainsText }}</textarea>
             </div>
+
+            {# The MinerU-HTML models Lemonade has downloaded; see lemonade.isPageReaderModel #}
+            <div class="border-t border-gray-100 transition-opacity" :class="{ 'opacity-50': !webPagesOn }">
+              <p class="px-4 pt-3 text-sm font-medium">Page reader</p>
+              <p class="px-4 mt-0.5 text-xs text-gray-500">How pages are turned into Markdown for the chat model. Built in takes milliseconds and keeps the whole page. A MinerU-HTML model picks out the page's main content first, images included, in a few seconds.</p>
+
+              {% if pageReaderModel and not isPageReaderModelListed %}
+                <div class="m-4 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
+                  The current page reader, "{{ pageReaderModel }}", isn't on the Lemonade server any more, so pages are converted directly. Choose another one, or Built in.
+                </div>
+              {% endif %}
+
+              <div class="mt-1 divide-y divide-gray-100">
+                <label class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
+                  <input type="radio" name="pageReaderModel" value="{{ noPageReaderModel }}" class="mt-0.5 text-sky-600 focus:ring-sky-500"
+                    {% if not pageReaderModel %}checked{% endif %} required>
+                  <span class="text-sm font-medium">Built in</span>
+                </label>
+
+                {% for model in pageReaderModels %}
+                  {{ modelOption('pageReaderModel', model, pageReaderModel) }}
+                {% endfor %}
+              </div>
+
+              {% if pageReaderModels.length == 0 %}
+                <p class="px-4 pb-3 text-xs text-gray-500">No MinerU-HTML models are downloaded on the Lemonade server. Download one there and it's listed here.</p>
+              {% endif %}
+            </div>
           </fieldset>
 
           <fieldset class="bg-white rounded-lg shadow-sm">

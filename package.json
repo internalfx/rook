@@ -13,6 +13,7 @@
     "@iconify/tailwind": "^1.2.0",
     "@koa/cors": "5.0.0",
     "@mailchimp/mailchimp_transactional": "1.3.3",
+    "@mixmark-io/domino": "2.2.0",
     "@tailwindcss/cli": "^4.3.3",
     "@tailwindcss/forms": "^0.5.11",
     "axios": "^1.21.0",
