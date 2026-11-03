@@ -83,6 +83,7 @@ export const GET = async function (ctx) {
     doneCount: tasks.countDone(),
     dueCount,
     maxDoneNoteLength: tasks.maxDoneNoteLength,
+    doneKeptDays: tasks.doneKeptDays,
     isTasksOn: tools.isTasksOn(),
     q,
     results,

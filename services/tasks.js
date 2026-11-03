@@ -5,12 +5,16 @@ import { rankByMeaning } from './embeddings.js'
 // Tasks: things the owner needs to get done. Open tasks are sorted most important first: by
 // priority, then by due date (soonest first, undated last), then oldest first. The model can
 // find them by keyword (searchTasks) or by meaning (searchByMeaning). A done task can have a
-// completion note (doneNote): how it went, or why it no longer applied.
+// completion note (doneNote): how it went, or why it no longer applied. Done tasks are deleted
+// doneKeptDays after they're done (deleteOldDone, run hourly by services/cron.js).
 
 export const priorities = [`high`, `normal`, `low`]
 
 // The longest completion note kept, from the Tasks page or the model
 export const maxDoneNoteLength = 2000
+
+// How long a done task is kept, in days, counted from when it was done
+export const doneKeptDays = 30
 
 const taskColumns = `tasks.id, tasks.title, tasks.notes, tasks.priority, tasks.dueDate, tasks.doneAt, tasks.doneNote, tasks.chatId, tasks.createdAt, tasks.updatedAt`
 
@@ -63,6 +67,7 @@ const updateDone = db.query(`
   WHERE id = $id
 `)
 const deleteTaskRow = db.query(`DELETE FROM tasks WHERE id = $id`)
+const deleteOldDoneRows = db.query(`DELETE FROM tasks WHERE doneAt IS NOT NULL AND doneAt < $before`)
 
 // "2026-11-01": a day in the server's time zone, which is the owner's
 export const toDay = function (date) {
@@ -228,6 +233,17 @@ export const deleteTask = function (id) {
   deleteTaskRow.run({ id })
 }
 
+// Deletes the tasks done more than doneKeptDays ago, and returns how many went. Open tasks are
+// never touched: putting a done task back on the list clears its doneAt.
+export const deleteOldDone = function () {
+  const keptMs = 1000 * 60 * 60 * 24 * doneKeptDays
+  const before = new Date(Date.now() - keptMs).toISOString()
+
+  const result = deleteOldDoneRows.run({ before })
+
+  return result.changes
+}
+
 // Tasks whose title, notes or completion note contain the words in `query`, those with the most
 // of the words first; ties keep the list's order (open before done, most important first)
 export const searchTasks = function ({ query, includeDone = false, limit = 20 }) {
@@ -309,6 +325,7 @@ export const searchByMeaning = async function ({ query, model, includeDone = fal
 export default {
   priorities,
   maxDoneNoteLength,
+  doneKeptDays,
   toDay,
   today,
   isValidDay,
@@ -324,6 +341,7 @@ export default {
   updateTask,
   setDone,
   deleteTask,
+  deleteOldDone,
   searchTasks,
   searchByMeaning,
 }

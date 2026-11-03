@@ -1,5 +1,6 @@
 import cron from 'node-cron'
 import briefings from './briefings.js'
+import tasks from './tasks.js'
 
 // Scheduled jobs, keyed by name
 const jobs = {}
@@ -10,6 +11,15 @@ jobs.briefing = cron.schedule(`* * * * *`, function () {
     briefings.runIfDue()
   } catch (err) {
     console.error(`Briefing schedule failed`, err)
+  }
+})
+
+// On the hour, deletes the tasks done more than tasks.doneKeptDays ago
+jobs.doneTasks = cron.schedule(`0 * * * *`, function () {
+  try {
+    tasks.deleteOldDone()
+  } catch (err) {
+    console.error(`Deleting old done tasks failed`, err)
   }
 })
 
