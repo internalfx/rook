@@ -14,10 +14,10 @@ import prompts from '../../prompts.js'
 // Every round of a reply offers the same tools (changing them would change the prompt); see
 // ai-tools/limits.js for how many calls and rounds it gets.
 
-// Said for the user before a conversation the model started (from a briefing), for
-// the model only. Some models' chat templates refuse a conversation that doesn't start with the
-// user.
-const briefingOpener = prompts.chat.briefingOpener
+// Said for the user before a conversation the model started (from Discuss on a briefing or a
+// task), for the model only. Some models' chat templates refuse a conversation that doesn't start
+// with the user.
+const opener = prompts.chat.opener
 
 // The most images one message can carry, and the most the model is shown at once: those in the
 // latest messages. Older ones become a line saying they were there, so a long chat with photos
@@ -266,7 +266,7 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
       if (upstream == null) {
         try {
           // Neither of these is saved: the system message, and the opener in front of a
-          // conversation the model started from a briefing
+          // conversation the model started
           const startMessages = []
 
           if (systemMessage != null) {
@@ -274,7 +274,7 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
           }
 
           if (history[0]?.role === `assistant`) {
-            startMessages.push({ role: `user`, content: briefingOpener })
+            startMessages.push({ role: `user`, content: opener })
           }
 
           const messages = [...startMessages, ...history]

@@ -119,6 +119,11 @@
             <span class="flex-1"></span>
 
             {% call deleteControls(task, returnTo) %}
+              {# Opens a new chat with the task as the model's first message #}
+              <form method="post" action="/tasks/{{ task.id }}/discuss">
+                <input type="hidden" name="returnTo" value="{{ returnTo }}">
+                <button type="submit" class="px-2 py-1 rounded hover:bg-sky-50 hover:text-sky-600">Discuss</button>
+              </form>
               <button type="button" class="px-2 py-1 rounded hover:bg-gray-100 hover:text-gray-800"
                 @click="editing = true; $nextTick(() => $refs.editForm.elements.title.focus())">Edit</button>
             {% endcall %}
@@ -222,6 +227,7 @@
     <p class="mt-1 mb-6 text-sm text-gray-500">
       {{ openTasks.length }} to do{% if dueCount > 0 %} · <span class="font-semibold text-red-700">{{ dueCount }} due today or overdue</span>{% endif %}.
       The chat model can add, find, change and complete them; only you can delete them, and done ones are deleted {{ doneKeptDays }} days after they're done.
+      Discuss opens a chat about a task, with the model speaking first.
     </p>
 
     <div class="space-y-6">

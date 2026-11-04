@@ -1,9 +1,12 @@
+import prompts from '../prompts.js'
 import lemonade from './lemonade.js'
 
 // Searching by meaning, shared by memories and tasks. Each searchable row stores its text as a
 // vector (an `embedding` column of float32 bytes) and the model that made it (`embeddingModel`).
 // Writing a row never calls Lemonade: a row whose vector is missing, or was made by another model
-// (vectors from different models can't be compared), is embedded at its next search.
+// (vectors from different models can't be compared), is embedded at its next search. Models
+// trained to be told what a search is for get the query with an instruction
+// (prompts.embeddings); rows are always embedded as plain text.
 
 // A vector => the bytes stored in an embedding column, and back
 export const encodeVector = function (vector) {
@@ -37,8 +40,9 @@ export const cosineSimilarity = function (a, b) {
 // Ranks `rows` (each with id, embedding and embeddingModel) by how close their text is in meaning
 // to `query`, closest first, as [{ row, score }]. Rows without a vector from `model` are embedded
 // first, in the same request as the query; `textOf(row)` gives the text to embed, and
-// `saveVector(row, bytes)` stores the new vector.
-export const rankByMeaning = async function ({ rows, query, model, textOf, saveVector, signal }) {
+// `saveVector(row, bytes)` stores the new vector. `instruction` says what the search is for
+// (from prompts.embeddings), for models that take one.
+export const rankByMeaning = async function ({ rows, query, instruction, model, textOf, saveVector, signal }) {
   if (rows.length === 0) {
     return []
   }
@@ -49,7 +53,13 @@ export const rankByMeaning = async function ({ rows, query, model, textOf, saveV
 
   const staleTexts = stale.map(textOf)
 
-  const vectors = await lemonade.embed({ model, inputs: [query, ...staleTexts], signal })
+  let queryText = query
+
+  if (await lemonade.takesQueryInstructions(model)) {
+    queryText = prompts.embeddings.query({ instruction, query })
+  }
+
+  const vectors = await lemonade.embed({ model, inputs: [queryText, ...staleTexts], signal })
   const queryVector = vectors[0]
 
   const vectorsById = {}

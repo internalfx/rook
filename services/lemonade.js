@@ -111,10 +111,10 @@ export const listEmbeddingModels = async function () {
   return embeddingModels
 }
 
-// Whether `model` can see images (Lemonade labels it "vision"). Remembered for a minute, so a
-// chat with images doesn't ask Lemonade on every message.
-export const modelSeesImages = async function (model) {
-  const key = `modelSeesImages:${model}`
+// The model with the id `model` as Lemonade lists it, or null when the server doesn't have it.
+// Remembered for a minute, so a chat with images or a search doesn't ask Lemonade every time.
+export const findModel = async function (model) {
+  const key = `findModel:${model}`
   const cached = caches.flash.get(key)
 
   if (cached != null) {
@@ -125,11 +125,28 @@ export const modelSeesImages = async function (model) {
   const found = models.find(function (candidate) {
     return candidate.id === model
   })
-  const seesImages = found != null && hasLabel(found, `vision`)
 
-  caches.flash.set(key, seesImages)
+  if (found == null) {
+    return null
+  }
 
-  return seesImages
+  caches.flash.set(key, found)
+
+  return found
+}
+
+// Whether `model` can see images (Lemonade labels it "vision")
+export const modelSeesImages = async function (model) {
+  const found = await findModel(model)
+  return found != null && hasLabel(found, `vision`)
+}
+
+// Whether `model` is trained to be told what a search is for (prompts.embeddings): a
+// Qwen3-Embedding model. Lemonade has no label for that, so they're known by name, or by their
+// checkpoint for one pulled under a name of its own (e.g. "user.Qwen3-Embed-8B").
+export const takesQueryInstructions = async function (model) {
+  const found = await findModel(model)
+  return found != null && /qwen3-embedding/i.test(`${found.id} ${found.checkpoint ?? ``}`)
 }
 
 // Starts a streamed chat completion and returns the upstream Response, whose body is a
@@ -353,7 +370,9 @@ export default {
   listChatModels,
   listImageModels,
   listEmbeddingModels,
+  findModel,
   modelSeesImages,
+  takesQueryInstructions,
   streamChat,
   writeTitle,
   generateImage,

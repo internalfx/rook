@@ -144,11 +144,11 @@
         }
       },
 
-      // Shift+Enter sends; plain Enter starts a new line
+      // Enter sends; Shift+Enter starts a new line
       onKeydown (event) {
-        const isShiftEnter = event.key === `Enter` && event.shiftKey === true && event.isComposing === false
+        const isPlainEnter = event.key === `Enter` && event.shiftKey === false && event.isComposing === false
 
-        if (isShiftEnter) {
+        if (isPlainEnter) {
           event.preventDefault()
           this.send()
         }
@@ -678,7 +678,7 @@
 
           <label class="sr-only" for="chat-input">Message</label>
           <textarea id="chat-input" x-ref="input" x-model="input" @keydown="onKeydown($event)" @paste="onPaste($event)" rows="2"
-            placeholder="Message {{ config.appName }}… (Shift+Enter to send)"
+            placeholder="Message {{ config.appName }}… (Shift+Enter for a new line)"
             class="flex-1 max-h-60 resize-none p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"
             {% if modelProblem %}disabled{% endif %}></textarea>
 

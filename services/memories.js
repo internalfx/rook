@@ -1,4 +1,5 @@
 import cuid from 'cuid'
+import prompts from '../prompts.js'
 import db from './db.js'
 import { rankByMeaning } from './embeddings.js'
 
@@ -115,6 +116,7 @@ const rankMemories = async function ({ rows, query, model, limit, signal }) {
   const ranked = await rankByMeaning({
     rows,
     query,
+    instruction: prompts.embeddings.memories,
     model,
     signal,
     textOf: function (row) {

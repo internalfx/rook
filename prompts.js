@@ -13,8 +13,8 @@ export const chat = {
   // Asks for a new chat's title, from the start of the conversation
   title: `Write a short title, at most 6 words, summarizing this conversation. Reply with only the title, no quotes or punctuation at the end.`,
 
-  // Said for the user in front of a chat the model started, from a briefing
-  briefingOpener: `(You started this conversation from my briefing.)`,
+  // Said for the user in front of a chat the model started, from Discuss on a briefing or a task
+  opener: `(You started this conversation.)`,
 
   // In place of an image the user attached, when it isn't sent: it's older than the most recent
   // few, or the chat model can't see images
@@ -52,6 +52,20 @@ Here, {_item_id} may be 1, 2, 3..., and {category} is either "main" or "other", 
 "1main2other3other4main"
 Input HTML:
 ${html}`,
+}
+
+// What a search by meaning is looking for, told to embedding models trained to take it
+// (Qwen3-Embedding; see lemonade.takesQueryInstructions). Only the query gets it; memories and
+// tasks are embedded as they are, so changing these doesn't re-embed anything.
+export const embeddings = {
+  // Qwen3-Embedding's format for a query; it's trained on this, so it's left as its makers wrote it
+  query: ({ instruction, query }) => `Instruct: ${instruction}\nQuery:${query}`,
+
+  // For search_memories and the Memories page
+  memories: `Given a question or topic, retrieve saved facts about the user that are relevant to it`,
+
+  // For find_tasks and the Tasks page
+  tasks: `Given a search query, retrieve to-do list tasks that match it`,
 }
 
 // Each tool's description, and its parameters' descriptions, by tool name. These are what the
@@ -226,5 +240,6 @@ export default {
   memories,
   briefing,
   pageReader,
+  embeddings,
   tools,
 }

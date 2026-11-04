@@ -1,4 +1,5 @@
 import cuid from 'cuid'
+import prompts from '../prompts.js'
 import db from './db.js'
 import { rankByMeaning } from './embeddings.js'
 
@@ -297,6 +298,7 @@ export const searchByMeaning = async function ({ query, model, includeDone = fal
   const ranked = await rankByMeaning({
     rows,
     query,
+    instruction: prompts.embeddings.tasks,
     model,
     signal,
     textOf: function (row) {
