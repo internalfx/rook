@@ -37,7 +37,7 @@ const describeTaskStart = function (task) {
     parts.push(quoted.join(`\n`))
   }
 
-  parts.push(`What would you like to do about it?`)
+  parts.push(`What would you like to discuss?`)
 
   return parts.join(`\n\n`)
 }
