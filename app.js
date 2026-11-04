@@ -8,8 +8,8 @@ import utc from 'dayjs/plugin/utc'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import duration from 'dayjs/plugin/duration'
 
-// Scheduled briefings, and deleting old done tasks; the test copy (scripts/test-server.js) runs
-// without them
+// Scheduled briefings, sending scheduled notifications, and deleting old done tasks; the test
+// copy (scripts/test-server.js) runs without them
 if (config.cronOff !== true) {
   await import(`./services/cron.js`)
 }

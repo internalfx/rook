@@ -3,6 +3,7 @@
   { href: '/chat', label: 'Chat', icon: 'icon-chat' },
   { href: '/tasks', label: 'Tasks', icon: 'icon-tasks' },
   { href: '/memories', label: 'Memories', icon: 'icon-memories' },
+  { href: '/notifications', label: 'Notifications', icon: 'icon-bell' },
   { href: '/settings', label: 'Settings', icon: 'icon-settings' }
 ] -%}
 <!DOCTYPE html>
@@ -35,7 +36,7 @@
       } catch (err) {}
 
       document.addEventListener(`alpine:init`, () => {
-        // `indicators` is what the server rendered the nav dots, the tasks badge and the bell with:
+        // `indicators` is what the server rendered the nav dots and the tasks badge with:
         // { briefingIsNew, notificationsUnseen, tasksBadge }
         Alpine.data(`layout`, (indicators) => ({
           ...indicators,
@@ -120,16 +121,6 @@
         <span class="icon-menu block size-5 bg-current" aria-hidden="true"></span>
       </button>
       <a href="/" class="text-lg font-bold">{{ config.appName }}</a>
-
-      {# The dot means a notification has arrived since the Notifications page was last opened #}
-      <a href="/notifications" class="relative ml-auto -mr-1 p-1.5 rounded-md text-gray-600 hover:bg-gray-100" aria-label="Notifications"
-        {% if ctx.path == '/notifications' %}aria-current="page"{% endif %}>
-        <span class="icon-bell block size-5 bg-current" aria-hidden="true"></span>
-        {# Rendered as they start, so nothing flashes before Alpine takes over #}
-        <span x-show="notificationsUnseen" class="absolute top-1 right-1 size-2 rounded-full bg-red-500 ring-2 ring-white" aria-hidden="true"
-          {% if not notificationsUnseen %}style="display: none"{% endif %}></span>
-        <span x-show="notificationsUnseen" class="sr-only" {% if not notificationsUnseen %}style="display: none"{% endif %}>New notifications</span>
-      </a>
     </header>
 
     <div class="relative flex-1 min-h-0 flex">
@@ -147,11 +138,18 @@
               {% if isCurrent %}aria-current="page"{% endif %}>
               <span class="{{ item.icon }} inline-block size-4 shrink-0 bg-current" aria-hidden="true"></span>
               <span class="flex-1">{{ item.label }}</span>
-              {# A briefing has finished since the Briefing page was last opened #}
+              {# A briefing has finished since the Briefing page was last opened. Rendered as they
+                 start, so nothing flashes before Alpine takes over. #}
               {% if item.href == '/briefing' %}
                 <span x-show="briefingIsNew" class="size-2 rounded-full bg-sky-500" aria-hidden="true"
                   {% if not briefingIsNew %}style="display: none"{% endif %}></span>
                 <span x-show="briefingIsNew" class="sr-only" {% if not briefingIsNew %}style="display: none"{% endif %}>New briefing</span>
+              {% endif %}
+              {# A notification has arrived since the Notifications page was last opened #}
+              {% if item.href == '/notifications' %}
+                <span x-show="notificationsUnseen" class="size-2 rounded-full bg-sky-500" aria-hidden="true"
+                  {% if not notificationsUnseen %}style="display: none"{% endif %}></span>
+                <span x-show="notificationsUnseen" class="sr-only" {% if not notificationsUnseen %}style="display: none"{% endif %}>New notifications</span>
               {% endif %}
               {# Tasks due today or overdue #}
               {% if item.href == '/tasks' %}

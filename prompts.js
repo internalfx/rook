@@ -33,7 +33,21 @@ export const memories = {
 
 export const briefing = {
   // The system message of every briefing, with the pinned memories after it
-  instructions: `You're preparing a short status update for the user. Look at what you know about them and what's been happening. If memories are duplicated, out of date or contradict each other, fix them. If a recent chat shows the user has done a task, mark it done, with a completion note if the chat says how it went or why it no longer applies; if it shows something they need to do that isn't on their list, add it. Use notify_user only for what's new or noteworthy, never for something you've already notified them about recently unless it has become more urgent. When you're done, reply with a short message, written to the user; they can start a chat from it.`,
+  instructions: `You're preparing a short status update for the user. Look at what you know about them and what's been happening. If memories are duplicated, out of date or contradict each other, fix them. If a recent chat shows the user has done a task, mark it done, with a completion note if the chat says how it went or why it no longer applies; if it shows something they need to do that isn't on their list, add it. Use notify_user only for what's new or noteworthy, never for something you've already notified them about recently unless it has become more urgent. When something will matter at a later time (before the user leaves somewhere, when someone's working hours start, ahead of a deadline), schedule it with schedule_notification rather than sending it now. Look at the notifications already waiting: cancel any that are out of date, and don't schedule the same thing twice. When you're done, reply with a short message, written to the user; they can start a chat from it.`,
+}
+
+// Just before a scheduled notification goes out, the chat model checks it's still right (see
+// services/notificationChecks.js). It's told the notification and why it was scheduled; its tools
+// can only look things up, besides send_notification, delay_notification and skip_notification.
+export const notificationCheck = {
+  // The system message, with the pinned memories after it
+  instructions: `A notification is about to go to the user's phone. It was written earlier, so first make sure it's still right: look up what it's about with your tools (its task, memories, Slack). Then call send_notification, rewording it if something has changed; delay_notification if it would be better a little later, e.g. once someone is online; or skip_notification if it's no longer needed or would be wrong. Skip a reminder the user asked for only when it's clearly done or no longer applies.`,
+
+  // Said for the user when it answers without deciding, or has used its turns for looking up
+  decideNow: `Decide now: call send_notification, delay_notification or skip_notification.`,
+
+  // Added to what it's told when it can't be delayed again, so it doesn't send a "not yet"
+  noMoreDelays: `It can't be delayed again: send it, or skip it if it's no longer worth sending.`,
 }
 
 // The model read_web_page can have pick out a page's main content (Settings → Web pages → Page
@@ -71,7 +85,7 @@ export const embeddings = {
 // Each tool's description, and its parameters' descriptions, by tool name. These are what the
 // model reads to decide when to use a tool and what to give it. A parameter missing here has no
 // description (its choices are listed for the model instead). The briefing's own tool,
-// notify_user, is at the end.
+// notify_user, and those of the check before a scheduled notification goes out, are at the end.
 
 // Used by add_task and update_task. Their choices (high, normal, low) are listed for the model.
 const priorityHint = `Normal unless the user says it's urgent, important or can wait.`
@@ -224,13 +238,56 @@ export const tools = {
     },
   },
 
+  schedule_notification: {
+    description: `Schedule a notification to the user's phone for a later time: a reminder they ask for ("remind me at 3pm to…"), or something that will matter then (before they leave somewhere, when someone's working hours start, ahead of a deadline). Just before it's due, it's checked against what's happened since, then sent, delayed or skipped.`,
+    parameters: {
+      title: `A few words, e.g. "Leave for the dentist".`,
+      message: `One or two sentences, written to the user as they should read when it arrives.`,
+      send_at: `When to send it: YYYY-MM-DD HH:MM (24-hour) in the user's time zone, or "in 20 minutes" or "in 2 hours" from now.`,
+      priority: `high only when it can't wait. Defaults to normal.`,
+      check: `What to check just before it goes out, e.g. "skip if the FBA plan task is done" or "only once Candy's working hours have started in Guangdong". Leave it out when there's nothing in particular.`,
+    },
+  },
+
+  list_scheduled_notifications: {
+    description: `List the scheduled notifications still waiting to be sent, with their ids and times. Use it when the user asks what reminders they have, or to get an id for cancel_notification.`,
+  },
+
+  cancel_notification: {
+    description: `Cancel a scheduled notification that hasn't been sent yet, when the user asks or it's no longer needed. Give its id (from list_scheduled_notifications, or a briefing's list of those waiting).`,
+  },
+
   // Briefings only
   notify_user: {
-    description: `Push a notification to the user's phone about something important: new, or more urgent than when you last notified them (e.g. a task due today still not done). Use it sparingly; most briefings need none, and never repeat a recent notification unless it has become more urgent.`,
+    description: `Push a notification to the user's phone now, about something important: new, or more urgent than when you last notified them (e.g. a task due today still not done). Use it sparingly; most briefings need none, and never repeat a recent notification unless it has become more urgent. For something that matters later, use schedule_notification instead.`,
     parameters: {
       title: `A few words, e.g. "Passport renewal is overdue".`,
       message: `One or two sentences, written to the user.`,
       priority: `high only when it can't wait, e.g. due within hours. Defaults to normal.`,
+    },
+  },
+
+  // The check before a scheduled notification goes out only (see notificationCheck)
+  send_notification: {
+    description: `Send the notification now. Give a new title or message only if what's happened since makes the old one wrong or out of date.`,
+    parameters: {
+      title: `Leave it out to keep the title.`,
+      message: `Leave it out to keep the message.`,
+    },
+  },
+
+  delay_notification: {
+    description: `Check this notification again later instead of sending it now, when it would be better then, e.g. once someone is online or a meeting has ended.`,
+    parameters: {
+      minutes: `How long to wait, from 5 to 240.`,
+      reason: `Why, in a few words, e.g. "Candy's working hours haven't started".`,
+    },
+  },
+
+  skip_notification: {
+    description: `Don't send the notification, because it's no longer needed or would be wrong, e.g. the task is done or the plan changed.`,
+    parameters: {
+      reason: `Why, in a few words, e.g. "The deck was sealed yesterday".`,
     },
   },
 }
@@ -239,6 +296,7 @@ export default {
   chat,
   memories,
   briefing,
+  notificationCheck,
   pageReader,
   embeddings,
   tools,

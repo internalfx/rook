@@ -17,7 +17,8 @@ import prompts from '../prompts.js'
 // memories, tasks, recent chats and Slack conversations picked in Settings, tidies the memories
 // and tasks, and writes the user a short overview. Discuss on the Briefing page starts a chat with
 // that overview as the model's first message. For something that matters now, it can notify the
-// user (services/notifications.js). Briefings run on a schedule (see runIfDue) or when asked for.
+// user (services/notifications.js), or schedule a notification for when it will matter.
+// Briefings run on a schedule (see runIfDue) or when asked for.
 //
 // The running briefing lives in memory, like chat replies (services/runs.js), so restarting the
 // server ends it.
@@ -44,6 +45,9 @@ const messageCharLimit = 600
 const notificationLookBack = 1000 * 60 * 60 * 24 * 14
 const historyLimit = 20
 
+// How far back it sees the scheduled notifications that were skipped or missed
+const skippedLookBack = 1000 * 60 * 60 * 24
+
 // Each picked Slack conversation gives its newest messages, whatever their age, and the replies to
 // its newest threads
 const slackMessageLimit = 30
@@ -52,12 +56,14 @@ const slackThreadLimit = 3
 // Used until an interval is chosen in Settings
 export const defaultBriefingMinutes = 360
 
-// The only chat tools a briefing has: it doesn't search the web or make images
+// The only chat tools a briefing has: it doesn't search the web or make images. It sees the
+// scheduled notifications in its context, so it doesn't need list_scheduled_notifications.
 const briefingToolNames = [
   `save_memory`, `search_memories`, `update_memory`, `delete_memory`,
   `add_task`, `find_tasks`, `update_task`, `complete_task`,
   `calculate`, `days_between`, `add_to_date`, `find_weekday`,
   `read_slack`, `search_slack`,
+  `schedule_notification`, `cancel_notification`,
 ]
 
 const insertBriefing = db.query(`
@@ -249,6 +255,34 @@ const describeRecentNotifications = function () {
   return `Newest first (up to ${historyLimit}):\n${lines.join(`\n`)}`
 }
 
+// The scheduled notifications waiting to be sent, with their ids so it can cancel them, then
+// those skipped or missed lately, so it knows what didn't go out
+const describeScheduledNotifications = function () {
+  const waiting = notifications.listWaiting()
+  const skipped = notifications.listSkippedSince(new Date(Date.now() - skippedLookBack))
+
+  let text = `None are waiting.`
+
+  if (waiting.length > 0) {
+    const lines = waiting.map(function (scheduled) {
+      return `- ${tools.describeScheduledNotification(scheduled)}`
+    })
+
+    text = `Soonest first. Just before each is due, it's checked against what's happened since, then sent, delayed or skipped.\n${lines.join(`\n`)}`
+  }
+
+  if (skipped.length > 0) {
+    const lines = skipped.map(function (scheduled) {
+      const outcome = scheduled.status === `missed` ? `Missed` : `Skipped`
+      return `- ${outcome} "${scheduled.title}" (due ${tools.describeSendTime(scheduled.sendAt)}): ${scheduled.note}`
+    })
+
+    text = `${text}\n\nNot sent in the last 24 hours, most recent first:\n${lines.join(`\n`)}`
+  }
+
+  return text
+}
+
 // The most recently active chats, whatever their age, so the model always sees what's been talked
 // about lately
 const describeRecentChats = function () {
@@ -337,6 +371,7 @@ const buildContext = async function (signal) {
     `## Memories\n\n${describeMemories()}`,
     `## Tasks\n\n${describeTasks()}`,
     `## Notifications you've sent recently\n\n${describeRecentNotifications()}`,
+    `## Notifications waiting to be sent\n\n${describeScheduledNotifications()}`,
     `## Recent chats\n\n${describeRecentChats()}`,
   ]
 
@@ -405,7 +440,7 @@ const runBriefingTool = async function ({ call, briefingId, briefingTools, callC
   }
 
   // A memory tool, or a name the model made up, which runTool answers as turned off
-  const result = await tools.runTool({ name, argumentsText, chatTools: briefingTools, chatId: null, signal })
+  const result = await tools.runTool({ name, argumentsText, chatTools: briefingTools, chatId: null, briefingId, signal })
 
   return result.content
 }

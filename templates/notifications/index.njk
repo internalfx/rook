@@ -1,9 +1,9 @@
 {% extends 'layouts/default' %}
 
 {% block body %}
-  <div class="max-w-3xl">
+  <div class="max-w-3xl xl:max-w-6xl">
     <h1 class="text-2xl font-bold">Notifications</h1>
-    <p class="mt-1 mb-6 text-sm text-gray-500">What briefings thought you should know about straight away.</p>
+    <p class="mt-1 mb-6 text-sm text-gray-500">What briefings and chats thought you should know about, when it matters.</p>
 
     <div class="space-y-6">
       {% if not isPushOn %}
@@ -13,53 +13,114 @@
         </div>
       {% endif %}
 
-      <section class="bg-white rounded-lg shadow-sm">
-        {% if notifications.length == 0 %}
-          <p class="p-6 text-sm text-center text-gray-500">No notifications yet. A briefing sends one when something new needs your attention.</p>
-        {% else %}
-          <ul class="divide-y divide-gray-100">
-            {% for notification in notifications %}
-              <li class="flex items-start gap-3 px-4 py-3">
-                {# New since the page was last opened #}
-                <span class="mt-1.5 size-2 shrink-0 rounded-full {{ 'bg-sky-500' if notification.isNew else 'bg-transparent' }}" aria-hidden="true"></span>
+      {# On wide screens, two columns as on Settings: those sent on the left, those coming up on the
+         right. On small screens, Coming up comes first, collapsed, so the list isn't pushed down. #}
+      <div class="grid gap-6 xl:grid-cols-2 xl:items-start">
+        {# Scheduled ones still to send, then those that weren't sent lately, with why. Always open
+           on wide screens; on small ones its body starts hidden, with no flash, and Show opens it. #}
+        <section x-data="{ open: false }" class="bg-white rounded-lg shadow-sm xl:order-last">
+          <button type="button" class="xl:hidden w-full flex items-center gap-3 px-4 py-3 text-left"
+            @click="open = !open" :aria-expanded="open" aria-controls="coming-up">
+            <span class="flex-1 font-bold">Coming up <span class="font-normal text-gray-500">· {{ comingUp.length }}</span></span>
+            <span class="text-xs text-sky-600" x-text="open ? 'Hide' : 'Show'">Show</span>
+          </button>
+          <h2 class="hidden xl:block px-4 py-3 font-bold">Coming up <span class="font-normal text-gray-500">· {{ comingUp.length }}</span></h2>
 
-                <div class="flex-1 min-w-0">
+          <div id="coming-up" class="border-t border-gray-200 max-xl:hidden" :class="{ 'max-xl:hidden': !open }">
+            <p class="px-4 py-2 text-xs text-gray-500 border-b border-gray-100">Scheduled in a chat or by a briefing. Just before each is due, the chat model checks it's still right, then sends, delays or skips it.</p>
+
+            {% if comingUp.length == 0 and notSent.length == 0 %}
+              <p class="p-6 text-sm text-center text-gray-500">Nothing is scheduled. Chats and briefings schedule notifications for when they'll matter.</p>
+            {% endif %}
+
+            <ul class="divide-y divide-gray-100">
+              {% for scheduled in comingUp %}
+                <li class="px-4 py-3">
                   <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <h2 class="text-sm font-bold break-words">
-                      {% if notification.isNew %}<span class="sr-only">New: </span>{% endif %}{{ notification.title }}
-                    </h2>
-                    {% if notification.priority == 'high' %}
+                    <h3 class="text-sm font-bold break-words">{{ scheduled.title }}</h3>
+                    {% if scheduled.priority == 'high' %}
                       <span class="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-800">High</span>
                     {% endif %}
                   </div>
 
-                  <p class="mt-0.5 text-sm text-gray-700 whitespace-pre-wrap break-words">{{ notification.message }}</p>
+                  <p class="mt-0.5 text-sm text-gray-700 whitespace-pre-wrap break-words">{{ scheduled.message }}</p>
 
                   <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
-                    <time datetime="{{ notification.createdAt }}" title="{{ notification.when }}">{{ notification.ago }}</time>
+                    <time datetime="{{ scheduled.sendAt }}" class="font-semibold text-gray-700">{{ scheduled.dueLabel }}</time>
 
-                    {% if notification.briefingWhen %}
-                      <a href="/briefing" class="underline hover:text-gray-800">From the briefing of {{ notification.briefingWhen }}</a>
+                    {% if scheduled.source == 'chat' and scheduled.chatId %}
+                      <a href="/chat/{{ scheduled.chatId }}" class="min-w-0 max-w-full truncate underline hover:text-gray-800">From {{ scheduled.chatTitle or 'a chat' }}</a>
+                    {% elif scheduled.source == 'briefing' %}
+                      <span>From a briefing</span>
                     {% endif %}
 
-                    {% if notification.pushStatus == 'sent' %}
-                      <span>Sent to your phone</span>
-                    {% elif notification.pushStatus == 'failed' %}
-                      <span class="text-red-700">Couldn't send to your phone: {{ notification.pushError }}</span>
+                    {% if scheduled.delays > 0 %}
+                      <span>Delayed: {{ scheduled.note }}</span>
                     {% endif %}
-
-                    <span class="flex-1"></span>
-
-                    <form method="post" action="/notifications/{{ notification.id }}/delete">
-                      <button type="submit" class="px-2 py-1 rounded hover:bg-red-50 hover:text-red-600">Delete</button>
-                    </form>
                   </div>
-                </div>
-              </li>
-            {% endfor %}
-          </ul>
-        {% endif %}
-      </section>
+                </li>
+              {% endfor %}
+
+              {% for scheduled in notSent %}
+                <li class="px-4 py-3 text-gray-500">
+                  <h3 class="text-sm font-bold line-through break-words">{{ scheduled.title }}</h3>
+                  <p class="mt-0.5 text-xs break-words">
+                    {{ 'Missed' if scheduled.status == 'missed' else 'Skipped' }} · due {{ scheduled.dueLabel }}: {{ scheduled.note }}
+                  </p>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        </section>
+
+        <section class="bg-white rounded-lg shadow-sm">
+          {% if notifications.length == 0 %}
+            <p class="p-6 text-sm text-center text-gray-500">No notifications yet. A briefing sends one when something new needs your attention, and a chat can schedule one as a reminder.</p>
+          {% else %}
+            <ul class="divide-y divide-gray-100">
+              {% for notification in notifications %}
+                <li class="flex items-start gap-3 px-4 py-3">
+                  {# New since the page was last opened #}
+                  <span class="mt-1.5 size-2 shrink-0 rounded-full {{ 'bg-sky-500' if notification.isNew else 'bg-transparent' }}" aria-hidden="true"></span>
+
+                  <div class="flex-1 min-w-0">
+                    <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                      <h2 class="text-sm font-bold break-words">
+                        {% if notification.isNew %}<span class="sr-only">New: </span>{% endif %}{{ notification.title }}
+                      </h2>
+                      {% if notification.priority == 'high' %}
+                        <span class="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-800">High</span>
+                      {% endif %}
+                    </div>
+
+                    <p class="mt-0.5 text-sm text-gray-700 whitespace-pre-wrap break-words">{{ notification.message }}</p>
+
+                    <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500">
+                      <time datetime="{{ notification.createdAt }}" title="{{ notification.when }}">{{ notification.ago }}</time>
+
+                      {% if notification.briefingWhen %}
+                        <a href="/briefing" class="underline hover:text-gray-800">From the briefing of {{ notification.briefingWhen }}</a>
+                      {% endif %}
+
+                      {% if notification.pushStatus == 'sent' %}
+                        <span>Sent to your phone</span>
+                      {% elif notification.pushStatus == 'failed' %}
+                        <span class="text-red-700">Couldn't send to your phone: {{ notification.pushError }}</span>
+                      {% endif %}
+
+                      <span class="flex-1"></span>
+
+                      <form method="post" action="/notifications/{{ notification.id }}/delete">
+                        <button type="submit" class="px-2 py-1 rounded hover:bg-red-50 hover:text-red-600">Delete</button>
+                      </form>
+                    </div>
+                  </div>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </section>
+      </div>
     </div>
   </div>
 {% endblock body %}

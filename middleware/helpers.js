@@ -49,7 +49,7 @@ export default async function (ctx, next) {
       _,
     }
 
-    // briefingIsNew, notificationsUnseen and tasksBadge, for the nav items and the bell
+    // briefingIsNew, notificationsUnseen and tasksBadge, for the nav items
     const output = nunjucks.render(
       templatePath,
       { ...locals, ...tools, ctx, config, ...indicators.readIndicators() },

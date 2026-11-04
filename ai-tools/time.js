@@ -54,7 +54,7 @@ const convertTimeTool = {
 }
 
 // The server's time zone, which is the owner's
-const getOwnTimeZone = function () {
+export const getOwnTimeZone = function () {
   return Intl.DateTimeFormat().resolvedOptions().timeZone
 }
 
@@ -176,7 +176,7 @@ const readTimeZone = function (text) {
 // The time the model asked about, in `zone`: "2026-11-02 15:00", "15:00" or "3:30 pm" for today
 // there, or nothing for now. Returns { instant, asked }, `asked` being the time as
 // "YYYY-MM-DD HH:mm", null for now.
-const readTime = function (text, zone) {
+export const readTime = function (text, zone) {
   const trimmed = typeof text === `string` ? text.trim() : ``
 
   if (trimmed === `` || trimmed.toLowerCase() === `now`) {
@@ -228,7 +228,7 @@ const readTime = function (text, zone) {
 // When the clocks change near `instant` in `zone`: a time asked for that doesn't exist (the
 // clocks skip it) or happens twice (they go back). Returns { instant, note }, with the first of
 // a time that happens twice.
-const checkClockChange = function (instant, asked, zone) {
+export const checkClockChange = function (instant, asked, zone) {
   const local = instant.tz(zone)
   const askedClock = asked.slice(11)
 
@@ -411,7 +411,10 @@ export const tools = [
 ]
 
 export default {
+  getOwnTimeZone,
   describeCurrentTime,
+  readTime,
+  checkClockChange,
   convertTime,
   tools,
 }

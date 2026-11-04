@@ -1,5 +1,6 @@
 import cron from 'node-cron'
 import briefings from './briefings.js'
+import notificationChecks from './notificationChecks.js'
 import tasks from './tasks.js'
 
 // Scheduled jobs, keyed by name
@@ -12,6 +13,13 @@ jobs.briefing = cron.schedule(`* * * * *`, function () {
   } catch (err) {
     console.error(`Briefing schedule failed`, err)
   }
+})
+
+// Checks and sends the scheduled notifications that are due
+jobs.notifications = cron.schedule(`* * * * *`, function () {
+  notificationChecks.sendDue().catch(function (err) {
+    console.error(`Sending scheduled notifications failed`, err)
+  })
 })
 
 // On the hour, deletes the tasks done more than tasks.doneKeptDays ago
