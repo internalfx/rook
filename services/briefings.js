@@ -643,6 +643,11 @@ export const isRunning = function (userId) {
   return running.has(userId)
 }
 
+// How many briefings are running, whoever's, for the Admin page
+export const countRunning = function () {
+  return running.size
+}
+
 export const isScheduleOn = function () {
   return config.briefings.on === true
 }
@@ -763,6 +768,7 @@ export default {
   cancelBriefing,
   getRun,
   isRunning,
+  countRunning,
   isScheduleOn,
   getBriefingMinutes,
   getNextDue,

@@ -48,6 +48,11 @@ export const hasActiveRuns = function () {
   return runsByChatId.size > 0
 }
 
+// How many chats are replying right now, for the Admin page
+export const countActiveRuns = function () {
+  return runsByChatId.size
+}
+
 // Stops the chat's run, if it has one. Returns whether there was one.
 export const stopRun = function (chatId) {
   const run = runsByChatId.get(chatId)
@@ -119,6 +124,7 @@ export default {
   startRun,
   getRun,
   hasActiveRuns,
+  countActiveRuns,
   stopRun,
   emit,
   finishRun,

@@ -57,6 +57,10 @@ table tr td {
   -webkit-mask: url(/static/icons/mdi--forum-outline.svg) center / contain no-repeat;
   mask: url(/static/icons/mdi--forum-outline.svg) center / contain no-repeat;
 }
+.icon-admin {
+  -webkit-mask: url(/static/icons/mdi--server-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--server-outline.svg) center / contain no-repeat;
+}
 .icon-settings {
   -webkit-mask: url(/static/icons/mdi--cog-outline.svg) center / contain no-repeat;
   mask: url(/static/icons/mdi--cog-outline.svg) center / contain no-repeat;

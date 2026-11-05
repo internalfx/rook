@@ -6,6 +6,10 @@
   { href: '/notifications', label: 'Notifications', icon: 'icon-bell' },
   { href: '/settings', label: 'Settings', icon: 'icon-settings' }
 ] -%}
+{# The Admin page is admins' alone (see middleware/auth.js) #}
+{% if ctx.state.user and ctx.state.user.isAdmin %}
+  {% set nav = nav.concat([{ href: '/admin', label: 'Admin', icon: 'icon-admin' }]) -%}
+{% endif -%}
 <!DOCTYPE html>
 <html>
   <head>

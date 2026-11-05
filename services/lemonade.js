@@ -67,6 +67,23 @@ export const listModels = async function () {
   return body.data
 }
 
+// For the Admin page: what's loaded right now, with each model's device, state and context size
+// (all_models_loaded)
+export const getHealth = function () {
+  return request(`GET`, `/health`)
+}
+
+// Request and token totals since Lemonade started, and the last request's time to first token
+// and tokens per second
+export const getStats = function () {
+  return request(`GET`, `/stats`)
+}
+
+// The machine: processor, memory, GPUs and NPU, and the model storage
+export const getSystemInfo = function () {
+  return request(`GET`, `/system-info`)
+}
+
 // Lemonade labels each model with what it can do, e.g. "chat", "image", "tts", "tool-calling"
 export const hasLabel = function (model, label) {
   const labels = model.labels ?? []
@@ -365,6 +382,9 @@ export const labelHTML = async function ({ model, html, blockCount, signal }) {
 
 export default {
   listModels,
+  getHealth,
+  getStats,
+  getSystemInfo,
   hasLabel,
   isPageReaderModel,
   listChatModels,

@@ -12,6 +12,9 @@ addRoute(metaRouter, null, `/**`, { ...defaultMeta })
 // META ROUTES
 addRoute(metaRouter, null, `/auth/**`, { ...defaultMeta, secure: false })
 
+// Only admins (users.isAdmin); the rest get a 404 (see middleware/auth.js)
+addRoute(metaRouter, null, `/admin/**`, { ...defaultMeta, admin: true })
+
 addRoute(metaRouter, null, `/static/**`, { ...defaultMeta, session: false, secure: false })
 addRoute(metaRouter, null, `/dist/**`, { ...defaultMeta, session: false, secure: false })
 addRoute(metaRouter, null, `/favicon.ico`, { ...defaultMeta, session: false, secure: false })
