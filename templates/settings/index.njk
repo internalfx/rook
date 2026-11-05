@@ -172,9 +172,11 @@
         <div class="px-4 py-3 border-b border-gray-100">
           <label for="slackToken" class="block text-sm font-medium">Your Slack user token</label>
           <p class="mt-0.5 mb-1 text-xs text-gray-500">A user token (it starts with xoxp-) from a Slack app installed to your workspace. Rook reads Slack as you with it, so it sees what you see. Leave it empty to keep Rook out of Slack; the conversations you ticked are kept for when you add one again.</p>
-          <input id="slackToken" type="password" name="slackToken" value="{{ slackToken or '' }}" placeholder="xoxp-…"
+          {# Masked with CSS rather than type="password", which would have browsers offer to save the
+             form as a login every time it's saved #}
+          <input id="slackToken" type="text" name="slackToken" value="{{ slackToken or '' }}" placeholder="xoxp-…"
             spellcheck="false" autocapitalize="off" autocomplete="off"
-            class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+            class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600 [-webkit-text-security:disc]">
         </div>
 
         {% if not isSlackConfigured %}
@@ -236,9 +238,9 @@
           <div>
             <label for="ntfyToken" class="block text-sm font-medium">Access token <span class="font-normal text-gray-500">(optional)</span></label>
             <p class="mt-0.5 mb-1 text-xs text-gray-500">For a topic that needs logging in to, on your own ntfy server or an ntfy.sh account.</p>
-            <input id="ntfyToken" x-ref="ntfyToken" type="password" name="ntfyToken" value="{{ ntfyToken or '' }}"
+            <input id="ntfyToken" x-ref="ntfyToken" type="text" name="ntfyToken" value="{{ ntfyToken or '' }}"
               spellcheck="false" autocapitalize="off" autocomplete="off"
-              class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+              class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600 [-webkit-text-security:disc]">
           </div>
 
           <div class="flex flex-wrap items-center gap-3">
