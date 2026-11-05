@@ -1,5 +1,82 @@
 {% extends 'layouts/default' %}
 
+{% block head %}
+<script>
+  document.addEventListener(`alpine:init`, () => {
+    // Fetches the page again every few seconds while the switch is on, and swaps in its content,
+    // so the numbers keep up without the page reloading. The switch is remembered in this browser.
+    Alpine.data(`adminPage`, () => ({
+      every: 5000,
+      auto: true,
+      refreshing: false,
+      // "3:04:05 PM" of the last refresh, or what went wrong with it
+      updatedAt: null,
+      problem: null,
+      timer: null,
+
+      init () {
+        try {
+          this.auto = localStorage.getItem(`adminAutoRefresh`) !== `off`
+        } catch (err) {}
+
+        this.$watch(`auto`, (auto) => {
+          try {
+            localStorage.setItem(`adminAutoRefresh`, auto ? `on` : `off`)
+          } catch (err) {}
+
+          this.schedule()
+        })
+
+        this.schedule()
+      },
+
+      schedule () {
+        clearTimeout(this.timer)
+        this.timer = null
+
+        if (this.auto) {
+          this.timer = setTimeout(() => this.refresh(), this.every)
+        }
+      },
+
+      // Waits for the server, then schedules the next one from when this one finished, so a slow
+      // Lemonade can't queue up refreshes
+      async refresh () {
+        if (this.refreshing) {
+          return
+        }
+
+        this.refreshing = true
+
+        try {
+          const response = await fetch(`/admin`, { headers: { Accept: `text/html` } })
+
+          if (response.ok === false) {
+            throw new Error(`${response.status} ${response.statusText}`)
+          }
+
+          const page = new DOMParser().parseFromString(await response.text(), `text/html`)
+          const content = page.querySelector(`#admin-content`)
+
+          if (content == null) {
+            throw new Error(`the page came back without its content`)
+          }
+
+          this.$refs.content.innerHTML = content.innerHTML
+          this.updatedAt = new Date().toLocaleTimeString()
+          this.problem = null
+        } catch (err) {
+          this.problem = `Couldn't refresh: ${err.message}`
+        } finally {
+          this.refreshing = false
+          this.schedule()
+        }
+      },
+    }))
+  })
+</script>
+{% endblock %}
+
 {# One line of a definition list: a label and its value #}
 {% macro fact(label, value) %}
   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2">
@@ -14,18 +91,36 @@
 {% endmacro %}
 
 {% block body %}
-  <div class="p-4 sm:p-8">
+  <div class="p-4 sm:p-8" x-data="adminPage">
     <div class="flex flex-wrap items-start gap-4">
       <div class="flex-1 min-w-0">
         <h1 class="text-2xl font-bold">Admin</h1>
-        <p class="mt-1 text-sm text-gray-500">The Lemonade server at <code class="font-mono">{{ lemonadeHost }}</code>, and what Rook holds. As of now; nothing updates by itself.</p>
+        <p class="mt-1 text-sm text-gray-500">The Lemonade server at <code class="font-mono">{{ lemonadeHost }}</code>, and what Rook holds.</p>
       </div>
 
-      <a href="/admin" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50">Refresh</a>
+      <div class="flex flex-wrap items-center gap-3">
+        <p class="text-xs text-gray-500" role="status">
+          <span x-show="refreshing" class="icon-loading inline-block size-3.5 align-text-bottom bg-current" aria-hidden="true" style="display: none"></span>
+          <span x-show="problem" x-text="problem" class="text-red-700" style="display: none"></span>
+          <span x-show="!problem && updatedAt" style="display: none">Updated <span x-text="updatedAt"></span></span>
+        </p>
+
+        {# An on/off switch, as Settings had: the checkbox is hidden, the slider is drawn #}
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <span class="relative inline-flex shrink-0 items-center">
+            <input type="checkbox" x-model="auto" class="peer sr-only">
+            <span class="h-6 w-11 rounded-full bg-gray-300 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500 peer-focus-visible:ring-offset-2" aria-hidden="true"></span>
+            <span class="absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" aria-hidden="true"></span>
+          </span>
+          Every 5 seconds
+        </label>
+
+        <button type="button" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50" :disabled="refreshing" @click="refresh()">Refresh</button>
+      </div>
     </div>
 
-    <div class="mt-6 grid gap-6 xl:grid-cols-2 xl:items-start">
-      <div class="space-y-6">
+    <div id="admin-content" x-ref="content" class="mt-6 grid gap-6 xl:grid-cols-6 xl:items-start">
+      <div class="col-span-2 space-y-6">
         {# What's loaded, from /health #}
         <section class="bg-white rounded-lg shadow-sm">
           <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200">
@@ -96,7 +191,7 @@
         </section>
       </div>
 
-      <div class="space-y-6">
+      <div class="col-span-4 space-y-6">
         {# What rook holds, per user #}
         <section class="bg-white rounded-lg shadow-sm">
           <h2 class="px-4 py-3 font-bold border-b border-gray-200">Rook</h2>
