@@ -411,6 +411,8 @@ export const readConversation = async function ({ userId, timeZone, channelId, o
 
   if (oldest != null) {
     params.oldest = String(oldest.getTime() / 1000)
+    // Without latest, Slack pages forward from oldest and gives the oldest messages, not the newest
+    params.latest = String(Date.now() / 1000)
   }
 
   const body = await callSlack(userId, `conversations.history`, params, signal)
