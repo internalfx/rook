@@ -271,39 +271,17 @@
       </dialog>
     </form>
 
-    {# Its own form, apart from the settings, so it isn't counted among their unsaved changes #}
-    <form method="post" action="/settings/password" class="mt-6 max-w-3xl">
-      <fieldset class="bg-white rounded-lg shadow-sm">
-        <div class="px-4 py-3 border-b border-gray-200">
-          <legend class="font-bold">Password</legend>
-          <p class="mt-0.5 text-xs text-gray-500">You log in as {{ ctx.state.user.email }}. A new password needs at least 8 characters.</p>
+    {# The form is on its own page, so this one has no password box for browsers to offer to save #}
+    <div class="mt-6 max-w-3xl bg-white rounded-lg shadow-sm">
+      <div class="flex flex-wrap items-center gap-4 px-4 py-3">
+        <div class="flex-1 min-w-0">
+          <h2 class="font-bold">Password</h2>
+          <p class="mt-0.5 text-xs text-gray-500">You log in as {{ ctx.state.user.email }}.</p>
         </div>
 
-        <div class="px-4 py-3 space-y-3">
-          <div>
-            <label for="currentPassword" class="block text-sm font-medium">Current password</label>
-            <input id="currentPassword" type="password" name="currentPassword" required autocomplete="current-password"
-              class="mt-1 w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
-          </div>
-
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label for="newPassword" class="block text-sm font-medium">New password</label>
-              <input id="newPassword" type="password" name="newPassword" required minlength="8" autocomplete="new-password"
-                class="mt-1 w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
-            </div>
-
-            <div>
-              <label for="confirmPassword" class="block text-sm font-medium">New password again</label>
-              <input id="confirmPassword" type="password" name="confirmPassword" required minlength="8" autocomplete="new-password"
-                class="mt-1 w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
-            </div>
-          </div>
-
-          <button type="submit" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50">Change password</button>
-        </div>
-      </fieldset>
-    </form>
+        <a href="/settings/password" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50">Change password</a>
+      </div>
+    </div>
   </div>
 
   <div class="shrink-0 px-4 py-3 sm:px-8 bg-white border-t border-gray-200">
