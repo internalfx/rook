@@ -1,6 +1,7 @@
 
-// Manages rook's users: adds one, resets a password, removes one with everything that's theirs,
-// or lists them. There's no sign-up page, so this is how accounts are made.
+// Manages rook's users: adds one, resets a password, makes or unmakes an admin, removes one with
+// everything that's theirs, or lists them. There's no sign-up page, so this is how accounts are
+// made.
 //   bun scripts/users.js
 //
 // It opens data/rook.db, which is fine while the server is running. A removed user's browsers are
@@ -56,7 +57,7 @@ const listUsers = function () {
   }
 
   for (const user of listed) {
-    console.log(`${user.id}. ${user.name} <${user.email}>  (${user.timeZone})`)
+    console.log(`${user.id}. ${user.name} <${user.email}>${user.isAdmin ? `  (admin)` : ``}  (${user.timeZone})`)
   }
 }
 
@@ -64,6 +65,7 @@ const addUser = async function () {
   const answers = await inquirer.prompt([
     { type: `input`, name: `name`, message: `Name:` },
     { type: `input`, name: `email`, message: `Email:` },
+    { type: `confirm`, name: `isAdmin`, message: `Admin?`, default: false },
   ])
 
   const name = answers.name.trim()
@@ -78,9 +80,23 @@ const addUser = async function () {
   }
 
   const password = await askPassword()
-  const user = await users.createUser({ name, email, password })
+  const user = await users.createUser({ name, email, password, isAdmin: answers.isAdmin })
 
-  console.log(`Added ${user.name} <${user.email}>. They log in with that email and password.`)
+  console.log(`Added ${user.name} <${user.email}>${user.isAdmin ? ` as an admin` : ``}. They log in with that email and password.`)
+}
+
+const toggleAdmin = async function () {
+  const user = await pickUser(`Whose admin status?`)
+
+  if (user == null) {
+    return
+  }
+
+  const makeAdmin = user.isAdmin === false
+
+  users.setAdmin(user.id, makeAdmin)
+
+  console.log(`${user.name} <${user.email}> is ${makeAdmin ? `now an admin` : `no longer an admin`}.`)
 }
 
 const resetPassword = async function () {
@@ -123,6 +139,7 @@ const actions = {
   list: listUsers,
   add: addUser,
   reset: resetPassword,
+  admin: toggleAdmin,
   remove: removeUser,
 }
 
@@ -134,6 +151,7 @@ const answers = await inquirer.prompt([{
     { name: `List the users`, value: `list` },
     { name: `Add a user`, value: `add` },
     { name: `Reset a user's password`, value: `reset` },
+    { name: `Make or unmake an admin`, value: `admin` },
     { name: `Remove a user`, value: `remove` },
   ],
 }])

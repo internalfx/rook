@@ -6,7 +6,8 @@ import settings from './settings.js'
 
 // Everyone who can log in. Each user's chats, memories, tasks, briefings and notifications are
 // theirs alone: every such table has a userId, and chat messages belong to their chat. Accounts
-// are made, reset and removed with scripts/users.js; there's no sign-up page and no admin.
+// are made, reset and removed with scripts/users.js, which also says who's an admin (isAdmin);
+// there's no sign-up page.
 //
 // User 1 is the owner from config.js: migrations/017-users.sql makes it empty, and the first
 // start fills it in from config.owner (see setUpOwner), after which that block can go.
@@ -14,28 +15,30 @@ import settings from './settings.js'
 // Every user's time zone until they choose one in Settings
 export const serverTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
-const userColumns = `id, email, name, createdAt, updatedAt`
+const userColumns = `id, email, name, isAdmin, createdAt, updatedAt`
 
 const selectUser = db.query(`SELECT ${userColumns} FROM users WHERE id = $id`)
 const selectLogin = db.query(`SELECT id, passhash FROM users WHERE email = $email`)
 const selectUsers = db.query(`SELECT ${userColumns} FROM users ORDER BY id`)
 const selectPasshash = db.query(`SELECT passhash FROM users WHERE id = $id`)
 const insertUser = db.query(`
-  INSERT INTO users (email, name, passhash, createdAt, updatedAt)
-  VALUES ($email, $name, $passhash, $now, $now)
+  INSERT INTO users (email, name, passhash, isAdmin, createdAt, updatedAt)
+  VALUES ($email, $name, $passhash, $isAdmin, $now, $now)
 `)
 const updateUserRow = db.query(`
   UPDATE users SET email = $email, name = $name, passhash = $passhash, updatedAt = $now WHERE id = $id
 `)
 const updatePasshash = db.query(`UPDATE users SET passhash = $passhash, updatedAt = $now WHERE id = $id`)
+const updateAdmin = db.query(`UPDATE users SET isAdmin = $isAdmin, updatedAt = $now WHERE id = $id`)
 const selectChatIds = db.query(`SELECT id FROM chats WHERE userId = $userId`)
 const deleteUserRow = db.query(`DELETE FROM users WHERE id = $id`)
 // A session's data is JSON, with the user's id in it once they've logged in
 const deleteUserSessions = db.query(`DELETE FROM sessions WHERE json_extract(data, '$.userId') = $userId`)
 
-// A user as the rest of rook sees them (ctx.state.user): no password hash, and their time zone
+// A user as the rest of rook sees them (ctx.state.user): no password hash, isAdmin as a boolean
+// (SQLite stores 1 or 0), and their time zone
 const toUser = function (row) {
-  return { ...row, timeZone: settings.get(row.id, `timeZone`) ?? serverTimeZone }
+  return { ...row, isAdmin: row.isAdmin === 1, timeZone: settings.get(row.id, `timeZone`) ?? serverTimeZone }
 }
 
 export const getUser = function (id) {
@@ -57,13 +60,17 @@ export const listUsers = function () {
   return selectUsers.all().map(toUser)
 }
 
-export const createUser = async function ({ name, email, password }) {
+export const createUser = async function ({ name, email, password, isAdmin = false }) {
   const passhash = await Bun.password.hash(password)
   const now = new Date().toISOString()
 
-  const result = insertUser.run({ email, name, passhash, now })
+  const result = insertUser.run({ email, name, passhash, isAdmin: isAdmin ? 1 : 0, now })
 
   return getUser(result.lastInsertRowid)
+}
+
+export const setAdmin = function (id, isAdmin) {
+  updateAdmin.run({ id, isAdmin: isAdmin ? 1 : 0, now: new Date().toISOString() })
 }
 
 export const setPassword = async function (id, password) {
@@ -137,6 +144,7 @@ export default {
   listUsers,
   createUser,
   setPassword,
+  setAdmin,
   checkPassword,
   deleteUser,
 }
