@@ -1,7 +1,10 @@
 {
+  "id": "/",
   "name": "ROOK",
   "short_name": "ROOK",
+  "description": "Your self-hosted personal assistant.",
   "start_url": "/",
+  "scope": "/",
   "icons": [
     {
       "src": "/static/icon-192.png?v=2",
@@ -11,7 +14,8 @@
     {
       "src": "/static/icon-512.png?v=2",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any maskable"
     }
   ],
   "background_color": "#ffffff",
