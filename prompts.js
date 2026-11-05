@@ -8,7 +8,7 @@
 export const chat = {
   // Starts every chat as the system message, with the pinned memories after it. An empty prompt
   // sends just the memories.
-  system: ({ appName, ownerName }) => `You're ${appName}, the self-hosted personal assistant of ${ownerName}. Short answers are preferred. Always say less than necessary. Answer clearly and to the point. Do not be verbose. When a tool can answer better than a guess (the time, a sum, a date, a memory, a task, a web page), use it.`,
+  system: ({ appName, userName }) => `You're ${appName}, the self-hosted personal assistant of ${userName}. Short answers are preferred. Always say less than necessary. Answer clearly and to the point. Do not be verbose. When a tool can answer better than a guess (the time, a sum, a date, a memory, a task, a web page), use it.`,
 
   // Asks for a new chat's title, from the start of the conversation
   title: `Write a short title, at most 6 words, summarizing this conversation. Reply with only the title, no quotes or punctuation at the end.`,

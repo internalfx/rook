@@ -1,4 +1,4 @@
-import settings from '../services/settings.js'
+import config from '../configure.js'
 import duckduckgo from './duckduckgo.js'
 import { matchDomain } from './sites.js'
 import { getReadableDomains } from './webPages.js'
@@ -8,9 +8,9 @@ import prompts from '../prompts.js'
 // web_search: searches DuckDuckGo (see duckduckgo.js), and marks the results read_web_page can
 // open
 
-// Off until switched on in Settings, since it sends the model's searches to DuckDuckGo
+// Off until switched on in config.js, since it sends the model's searches to DuckDuckGo
 export const isWebSearchOn = function () {
-  return settings.get(`webSearchOn`) === true
+  return config.tools?.webSearch === true
 }
 
 // The same text whatever the Sites list holds, so editing the list doesn't change it; each
@@ -51,9 +51,9 @@ const runWebSearch = async function ({ argumentsText, signal }) {
     return { content: `The search failed: no query was given.`, imageId: null }
   }
 
-  // It can be switched off in Settings part way through a conversation
+  // It can be switched off in config.js part way through a conversation
   if (isWebSearchOn() === false) {
-    return { content: `Web search is turned off in Settings.`, imageId: null }
+    return { content: `Web search is turned off in config.js.`, imageId: null }
   }
 
   const results = await duckduckgo.search({ query: query.trim(), signal })
@@ -75,7 +75,7 @@ const runWebSearch = async function ({ argumentsText, signal }) {
 export const tools = [
   {
     name: `web_search`,
-    // In every chat's tools, but offered only while switched on in Settings (see
+    // In every chat's tools, but offered only while switched on in config.js (see
     // buildWebSearchTool)
     settings: () => ({}),
     definition: buildWebSearchTool,

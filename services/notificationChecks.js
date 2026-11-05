@@ -1,7 +1,8 @@
 import lemonade from './lemonade.js'
-import settings from './settings.js'
+import config from '../configure.js'
 import chats from './chats.js'
 import notifications from './notifications.js'
+import users from './users.js'
 import tools from '../ai-tools/index.js'
 import { parseArguments } from '../ai-tools/arguments.js'
 import { readModelReply } from './modelStream.js'
@@ -31,7 +32,7 @@ const maxDelays = 2
 const minDelayMinutes = 5
 const maxDelayMinutes = 240
 
-// What a check can use to look things up, as Settings allow. None of them change anything: a
+// What a check can use to look things up, as config.js allows. None of them change anything: a
 // check runs with no one watching, and keeps no record of what it did.
 const lookupToolNames = [
   `find_tasks`, `search_memories`, `read_slack`, `search_slack`,
@@ -122,8 +123,8 @@ const shorten = function (text) {
 }
 
 // One system message, since some models' chat templates only accept one, as briefings do
-const buildSystemMessage = function () {
-  const memoriesMessage = tools.buildMemoriesMessage()
+const buildSystemMessage = function (user) {
+  const memoriesMessage = tools.buildMemoriesMessage(user.id)
 
   let content = prompts.notificationCheck.instructions
 
@@ -155,8 +156,10 @@ const describeSourceChat = function (scheduled) {
   return `The end of that chat, "${scheduled.chatTitle ?? `Untitled chat`}" (up to ${chatMessageLimit} messages):\n${lines.join(`\n`)}`
 }
 
-// What the model is told about the notification, as the user's message
-const buildContext = function (scheduled) {
+// What the model is told about the notification, as the user's message, its times in the
+// user's zone
+const buildContext = function (scheduled, user) {
+  const zone = user.timeZone
   const lines = [
     `Title: ${scheduled.title}`,
     `Message: ${scheduled.message}`,
@@ -167,10 +170,10 @@ const buildContext = function (scheduled) {
   }
 
   const where = scheduled.source === `briefing` ? `by a briefing` : `in the chat "${scheduled.chatTitle ?? `Untitled chat`}"`
-  lines.push(`Scheduled ${tools.describeSendTime(scheduled.createdAt)}, ${where}.`)
+  lines.push(`Scheduled ${tools.describeSendTime(scheduled.createdAt, zone)}, ${where}.`)
 
   const lateMinutes = Math.floor((Date.now() - Date.parse(scheduled.sendAt)) / 60000)
-  lines.push(`Due ${tools.describeSendTime(scheduled.sendAt)}${lateMinutes >= 1 ? `, ${lateMinutes} minutes ago: the server was down then` : ``}.`)
+  lines.push(`Due ${tools.describeSendTime(scheduled.sendAt, zone)}${lateMinutes >= 1 ? `, ${lateMinutes} minutes ago: the server was down then` : ``}.`)
 
   if (scheduled.checkNote !== ``) {
     lines.push(`What to check first: ${scheduled.checkNote}`)
@@ -185,7 +188,7 @@ const buildContext = function (scheduled) {
   }
 
   const sections = [
-    tools.describeCurrentTime(),
+    tools.describeCurrentTime(user),
     `## The notification\n\n${lines.join(`\n`)}`,
   ]
 
@@ -227,17 +230,17 @@ const readDecision = function (name, argumentsText, scheduled) {
   return { decision: `skip`, reason: readText(args.reason, 300) || `No reason given.` }
 }
 
-// Has the model decide what to do with `scheduled`: { decision: `send`, title, message },
-// { decision: `delay`, minutes, reason } or { decision: `skip`, reason }, or null when it
-// didn't decide. Throws when the model can't be asked, or `signal` stops it.
-const checkNotification = async function (scheduled, signal) {
-  const model = settings.get(`chatModel`)
+// Has the model decide what to do with `scheduled`, which is `user`'s: { decision: `send`, title,
+// message }, { decision: `delay`, minutes, reason } or { decision: `skip`, reason }, or null when
+// it didn't decide. Throws when the model can't be asked, or `signal` stops it.
+const checkNotification = async function (scheduled, user, signal) {
+  const model = config.models.chat
 
   if (model == null) {
-    throw new Error(`no chat model is chosen in Settings`)
+    throw new Error(`no chat model is named in config.js`)
   }
 
-  const chatTools = tools.getChatTools()
+  const chatTools = tools.getChatTools(user)
   const lookupTools = {}
 
   for (const name of lookupToolNames) {
@@ -251,7 +254,7 @@ const checkNotification = async function (scheduled, signal) {
     : [sendNotificationTool, skipNotificationTool]
   const definitions = [...tools.getToolDefinitions(lookupTools), ...decisionTools]
 
-  const messages = [buildSystemMessage(), { role: `user`, content: buildContext(scheduled) }]
+  const messages = [buildSystemMessage(user), { role: `user`, content: buildContext(scheduled, user) }]
 
   // How many times the model has called each lookup tool in this check, by name
   const callCounts = {}
@@ -314,7 +317,7 @@ const checkNotification = async function (scheduled, signal) {
           content = describeCallLimit(name, `check`)
         } else {
           // A name the model made up, or one left out, is answered as turned off
-          const result = await tools.runTool({ name, argumentsText: call.function.arguments, chatTools: lookupTools, chatId: null, signal })
+          const result = await tools.runTool({ name, argumentsText: call.function.arguments, chatTools: lookupTools, user, chatId: null, signal })
           content = result.content
         }
       }
@@ -336,11 +339,20 @@ const handleDue = async function (scheduled) {
     return
   }
 
+  // Whose it is; one whose user is gone goes with them (ON DELETE CASCADE), so this is only null
+  // for a row with no user, which is nobody's
+  const user = users.getUser(scheduled.userId)
+
+  if (user == null) {
+    notifications.markSkipped(scheduled.id, `skipped`, `It belongs to no user.`)
+    return
+  }
+
   const timeLimit = AbortSignal.timeout(checkTimeLimit)
   let result = null
 
   try {
-    result = await checkNotification(scheduled, timeLimit)
+    result = await checkNotification(scheduled, user, timeLimit)
   } catch (err) {
     const problem = timeLimit.aborted ? `it took longer than ${checkTimeLimit / 60000} minutes` : err.message
     console.error(`Checking the scheduled notification "${scheduled.title}" failed`, err)
@@ -349,7 +361,7 @@ const handleDue = async function (scheduled) {
   }
 
   // It may have been cancelled while it was checked
-  const current = notifications.getScheduled(scheduled.id)
+  const current = notifications.getScheduled(user.id, scheduled.id)
 
   if (current == null || current.status !== `waiting`) {
     return
@@ -362,7 +374,7 @@ const handleDue = async function (scheduled) {
   }
 
   if (result.decision === `send`) {
-    await notifications.sendNotification({ title: result.title, message: result.message, priority: scheduled.priority, briefingId: scheduled.briefingId })
+    await notifications.sendNotification({ userId: user.id, title: result.title, message: result.message, priority: scheduled.priority, briefingId: scheduled.briefingId })
     notifications.deleteScheduled(scheduled.id)
     console.log(`Scheduled notification "${result.title}" sent`)
     return
@@ -381,8 +393,8 @@ const handleDue = async function (scheduled) {
 // Whether sendDue is still going from an earlier minute
 let isSending = false
 
-// Called every minute (see services/cron.js): checks and sends, one at a time, the scheduled
-// notifications due within checkLead, then deletes old skipped and missed ones
+// Called every minute (see services/cron.js): checks and sends, one at a time, every user's
+// scheduled notifications due within checkLead, then deletes old skipped and missed ones
 export const sendDue = async function () {
   if (isSending) {
     return

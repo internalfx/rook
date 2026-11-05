@@ -1,109 +1,35 @@
 
 import joi from '../../services/joi.js'
-import lemonade from '../../services/lemonade.js'
 import settings from '../../services/settings.js'
 import tools from '../../ai-tools/index.js'
-import briefings from '../../services/briefings.js'
 import notifications from '../../services/notifications.js'
 import slack from '../../services/slack.js'
-import { parseDomains } from '../../ai-tools/sites.js'
-import { formatContextLength } from '../../lib/format.js'
+import users from '../../services/users.js'
 
-// Value of the "Off" choice for the image model
-const noImageModel = `none`
+// Settings holds what's each user's own: their time zone, where their notifications are pushed,
+// their Slack token and which Slack conversations are read, and their password
+// (routes/settings/password.js). What applies to everyone (the models, the tools and the
+// briefing schedule) is in config.js.
 
-// Value of the "Built in" choice for the page reader: pages are converted directly
-const noPageReaderModel = `none`
-
-// The image size choices, in the order of tools.imageSizes
-const imageSizeNames = [`Small`, `Medium`, `Large`]
-
-const imageSizeOptions = tools.imageSizes.map(function (size, index) {
-  const [width, height] = size.split(`x`)
-
-  return {
-    value: size,
-    name: imageSizeNames[index],
-    dimensions: `${width} × ${height}`,
-  }
-})
-
-const toModelOption = function (model) {
-  return {
-    id: model.id,
-    labels: model.labels ?? [],
-    sizeGB: model.size ?? null,
-    contextLength: formatContextLength(model.context_length),
-  }
-}
-
-const isListed = function (options, id) {
-  return options.some(function (option) {
-    return option.id === id
-  })
-}
+// Every zone the runtime knows, for the time zone list
+const timeZones = Intl.supportedValuesOf(`timeZone`)
 
 export const GET = async function (ctx) {
-  let chatModels = []
-  let imageModels = []
-  let embeddingModels = []
-  let pageReaderModels = []
-  let modelsError = null
-
-  try {
-    const models = await lemonade.listModels()
-
-    // Page readers are labelled "chat" too, but can't hold a conversation
-    const chatModelList = models.filter(function (model) {
-      return lemonade.hasLabel(model, `chat`) && lemonade.isPageReaderModel(model) === false
-    })
-
-    const imageModelList = models.filter(function (model) {
-      return lemonade.hasLabel(model, `image`)
-    })
-
-    const embeddingModelList = models.filter(function (model) {
-      return lemonade.hasLabel(model, `embeddings`)
-    })
-
-    const pageReaderModelList = models.filter(lemonade.isPageReaderModel)
-
-    chatModels = chatModelList.map(toModelOption)
-    imageModels = imageModelList.map(toModelOption)
-    embeddingModels = embeddingModelList.map(toModelOption)
-    pageReaderModels = pageReaderModelList.map(toModelOption)
-  } catch (err) {
-    console.error(err)
-    modelsError = err.message
-  }
-
-  const chatModel = settings.get(`chatModel`)
-  const imageModel = settings.get(`imageModel`)
-  const imageSize = settings.get(`imageSize`) ?? tools.defaultImageSize
-  // The text box shows one site per line
-  const webDomainsText = tools.getWebDomains().join(`\n`)
-  const isWebPagesOn = tools.isWebPagesOn()
-  const pageReaderModel = tools.getPageReaderModel()
-  const isWebSearchOn = tools.isWebSearchOn()
-  const embeddingModel = tools.getEmbeddingModel()
-  // The switch shows what was chosen, even while there's no embedding model to make it work
-  const isMemoriesSwitchOn = settings.get(`memoriesOn`) === true
-  const isTasksOn = tools.isTasksOn()
-  const isBriefingOn = briefings.isScheduleOn()
-  const briefingMinutes = briefings.getBriefingMinutes()
-  const { url: ntfyUrl, token: ntfyToken } = notifications.getNtfySettings()
+  const user = ctx.state.user
+  const { url: ntfyUrl, token: ntfyToken } = notifications.getNtfySettings(user.id)
 
   // The Slack conversations to pick from, as two groups (channels, then group DMs and DMs), each
   // with the picked ones first. While Slack can't be read, the page shows why, with the picks as
   // they are.
-  const isSlackConfigured = slack.isConfigured()
-  const slackPicks = tools.getSlackChannels()
+  const slackToken = settings.get(user.id, `slackToken`)
+  const isSlackConfigured = slack.isConfigured(user.id)
+  const slackPicks = tools.getSlackChannels(user)
   let slackGroups = []
   let slackError = null
 
   if (isSlackConfigured) {
     try {
-      const conversations = await slack.listMyConversations()
+      const conversations = await slack.listMyConversations(user.id)
 
       const pickedIds = new Set(slackPicks.map(function (conversation) {
         return conversation.id
@@ -137,32 +63,12 @@ export const GET = async function (ctx) {
   }
 
   ctx.body = ctx.nunjucks(`settings/index`, {
-    modelsError,
-    chatModels,
-    imageModels,
-    chatModel,
-    imageModel,
-    imageSize,
-    imageSizeOptions,
-    noImageModel,
-    isChatModelListed: isListed(chatModels, chatModel),
-    isImageModelListed: isListed(imageModels, imageModel),
-    webDomainsText,
-    isWebPagesOn,
-    pageReaderModels,
-    pageReaderModel,
-    noPageReaderModel,
-    isPageReaderModelListed: isListed(pageReaderModels, pageReaderModel),
-    isWebSearchOn,
-    embeddingModels,
-    embeddingModel,
-    isEmbeddingModelListed: isListed(embeddingModels, embeddingModel),
-    isMemoriesSwitchOn,
-    isTasksOn,
-    isBriefingOn,
-    briefingMinutes,
+    timeZone: user.timeZone,
+    timeZones,
+    serverTimeZone: users.serverTimeZone,
     ntfyUrl,
     ntfyToken,
+    slackToken,
     isSlackConfigured,
     slackGroups,
     slackPicks,
@@ -171,29 +77,18 @@ export const GET = async function (ctx) {
 }
 
 export const POST = async function (ctx) {
+  const user = ctx.state.user
+
   let args
 
   try {
     args = await joi.object({
-      chatModel: joi.string().trim(),
-      imageModel: joi.string().trim(),
-      imageSize: joi.string().trim(),
-      // One site per line. An empty box arrives as null (see services/joi.js) and turns web
-      // pages off.
-      webDomains: joi.string(),
-      // The switch is a checkbox, which a form leaves out when it's off
-      webPagesOn: joi.boolean(),
-      pageReaderModel: joi.string().trim(),
-      webSearchOn: joi.boolean(),
-      memoriesOn: joi.boolean(),
-      embeddingModel: joi.string().trim(),
-      tasksOn: joi.boolean(),
-      briefingOn: joi.boolean(),
-      // Up to a day
-      briefingMinutes: joi.number().integer().min(1).max(1440),
+      timeZone: joi.string().trim(),
       // An empty topic URL turns phone notifications off
       ntfyUrl: joi.string().trim(),
       ntfyToken: joi.string().trim(),
+      // An empty token turns Slack off; the picks are kept for when one is added again
+      slackToken: joi.string().trim(),
       // The ids of the Slack conversations picked: a checkbox each, so one arrives as a string.
       // slackShown says the list was on the page, so a Slack outage doesn't clear the picks.
       slackChannels: joi.array().items(joi.string()).single(),
@@ -206,62 +101,9 @@ export const POST = async function (ctx) {
     return ctx.redirect(`/settings`)
   }
 
-  const models = await lemonade.listModels()
-
   // Check everything before saving anything, so a bad choice doesn't leave half the form saved
-  if (args.chatModel != null) {
-    const chatModel = models.find(function (model) {
-      return model.id === args.chatModel
-    })
-
-    if (chatModel == null || lemonade.hasLabel(chatModel, `chat`) === false || lemonade.isPageReaderModel(chatModel)) {
-      ctx.addFlash(`"${args.chatModel}" isn't a chat model on the Lemonade server.`, `error`)
-      return ctx.redirect(`/settings`)
-    }
-  }
-
-  const usePagesDirectly = args.pageReaderModel === noPageReaderModel
-
-  if (args.pageReaderModel != null && usePagesDirectly === false) {
-    const pageReaderModel = models.find(function (model) {
-      return model.id === args.pageReaderModel
-    })
-
-    if (pageReaderModel == null || lemonade.isPageReaderModel(pageReaderModel) === false) {
-      ctx.addFlash(`"${args.pageReaderModel}" isn't a MinerU-HTML model on the Lemonade server.`, `error`)
-      return ctx.redirect(`/settings`)
-    }
-  }
-
-  const turnImagesOff = args.imageModel === noImageModel
-
-  if (args.imageModel != null && turnImagesOff === false) {
-    const imageModel = models.find(function (model) {
-      return model.id === args.imageModel
-    })
-
-    if (imageModel == null || lemonade.hasLabel(imageModel, `image`) === false) {
-      ctx.addFlash(`"${args.imageModel}" isn't an image model on the Lemonade server.`, `error`)
-      return ctx.redirect(`/settings`)
-    }
-  }
-
-  if (args.embeddingModel != null) {
-    const embeddingModel = models.find(function (model) {
-      return model.id === args.embeddingModel
-    })
-
-    if (embeddingModel == null || lemonade.hasLabel(embeddingModel, `embeddings`) === false) {
-      ctx.addFlash(`"${args.embeddingModel}" isn't an embedding model on the Lemonade server.`, `error`)
-      return ctx.redirect(`/settings`)
-    }
-  }
-
-  // Memories are searched with the embedding model, so they can't be on without one
-  const hasEmbeddingModel = args.embeddingModel != null || tools.getEmbeddingModel() != null
-
-  if (args.memoriesOn === true && hasEmbeddingModel === false) {
-    ctx.addFlash(`Choose an embedding model to turn memories on.`, `error`)
+  if (args.timeZone != null && timeZones.includes(args.timeZone) === false) {
+    ctx.addFlash(`"${args.timeZone}" isn't a time zone.`, `error`)
     return ctx.redirect(`/settings`)
   }
 
@@ -270,24 +112,24 @@ export const POST = async function (ctx) {
     return ctx.redirect(`/settings`)
   }
 
-  if (args.imageSize != null && tools.imageSizes.includes(args.imageSize) === false) {
-    ctx.addFlash(`"${args.imageSize}" isn't one of the image sizes.`, `error`)
-    return ctx.redirect(`/settings`)
-  }
+  // A new token is tried before it's saved, so a typo doesn't take Slack away
+  const isNewToken = args.slackToken != null && args.slackToken !== settings.get(user.id, `slackToken`)
 
-  const { domains: webDomains, invalid: invalidSites } = parseDomains(args.webDomains ?? ``)
+  if (isNewToken) {
+    const check = await slack.checkToken(args.slackToken)
 
-  if (invalidSites.length > 0) {
-    ctx.addFlash(`These aren't sites: ${invalidSites.join(`, `)}. Put one site per line, like github.com.`, `error`)
-    return ctx.redirect(`/settings`)
+    if (check.ok === false) {
+      ctx.addFlash(`That Slack token doesn't work: ${check.error}`, `error`)
+      return ctx.redirect(`/settings`)
+    }
   }
 
   // The picks are saved with their labels, so chats can name them without asking Slack
   let slackPicks = null
 
-  if (args.slackShown === true) {
+  if (args.slackShown === true && isNewToken === false) {
     try {
-      const conversations = await slack.listMyConversations()
+      const conversations = await slack.listMyConversations(user.id)
       const pickedIds = new Set(args.slackChannels ?? [])
 
       slackPicks = conversations.filter(function (conversation) {
@@ -299,90 +141,35 @@ export const POST = async function (ctx) {
     }
   }
 
-  if (args.chatModel != null) {
-    settings.set(`chatModel`, args.chatModel)
-  }
-
-  if (args.imageSize != null) {
-    settings.set(`imageSize`, args.imageSize)
-  }
-
-  if (webDomains.length > 0) {
-    settings.set(`webDomains`, webDomains)
-  } else {
-    settings.unset(`webDomains`)
-  }
-
-  if (args.webPagesOn === true) {
-    settings.unset(`webPagesOff`)
-  } else {
-    settings.set(`webPagesOff`, true)
-  }
-
-  if (usePagesDirectly) {
-    settings.unset(`pageReaderModel`)
-  } else if (args.pageReaderModel != null) {
-    settings.set(`pageReaderModel`, args.pageReaderModel)
-  }
-
-  if (args.webSearchOn === true) {
-    settings.set(`webSearchOn`, true)
-  } else {
-    settings.unset(`webSearchOn`)
-  }
-
-  if (args.embeddingModel != null) {
-    settings.set(`embeddingModel`, args.embeddingModel)
-  }
-
-  if (args.memoriesOn === true) {
-    settings.set(`memoriesOn`, true)
-  } else {
-    settings.unset(`memoriesOn`)
-  }
-
-  // On unless switched off, like web pages
-  if (args.tasksOn === true) {
-    settings.unset(`tasksOff`)
-  } else {
-    settings.set(`tasksOff`, true)
-  }
-
-  if (args.briefingOn === true) {
-    settings.set(`briefingOn`, true)
-  } else {
-    settings.unset(`briefingOn`)
-  }
-
-  if (args.briefingMinutes != null) {
-    settings.set(`briefingMinutes`, args.briefingMinutes)
+  if (args.timeZone != null) {
+    settings.set(user.id, `timeZone`, args.timeZone)
   }
 
   if (args.ntfyUrl != null) {
-    settings.set(`ntfyUrl`, args.ntfyUrl)
+    settings.set(user.id, `ntfyUrl`, args.ntfyUrl)
   } else {
-    settings.unset(`ntfyUrl`)
+    settings.unset(user.id, `ntfyUrl`)
   }
 
   if (args.ntfyToken != null) {
-    settings.set(`ntfyToken`, args.ntfyToken)
+    settings.set(user.id, `ntfyToken`, args.ntfyToken)
   } else {
-    settings.unset(`ntfyToken`)
+    settings.unset(user.id, `ntfyToken`)
   }
 
-  // Left as they are when the list wasn't on the page
+  if (args.slackToken != null) {
+    settings.set(user.id, `slackToken`, args.slackToken)
+  } else {
+    settings.unset(user.id, `slackToken`)
+  }
+
+  // Left as they are when the list wasn't on the page, or was for another token
   if (slackPicks != null) {
     if (slackPicks.length > 0) {
-      settings.set(`slackChannels`, slackPicks)
+      settings.set(user.id, `slackChannels`, slackPicks)
     } else {
-      settings.unset(`slackChannels`)
+      settings.unset(user.id, `slackChannels`)
     }
-  }
-
-  if (turnImagesOff) {
-    settings.unset(`imageModel`)
-  } else if (args.imageModel != null) {
-    settings.set(`imageModel`, args.imageModel)
   }
 
   ctx.addFlash(`Settings saved.`, `success`)

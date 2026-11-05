@@ -1,9 +1,16 @@
 import cuid from 'cuid'
+import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc'
+import timezone from 'dayjs/plugin/timezone'
 import prompts from '../prompts.js'
 import db from './db.js'
 import { rankByMeaning } from './embeddings.js'
 
-// Tasks: things the owner needs to get done. Open tasks are sorted soonest due first: by due
+dayjs.extend(utc)
+dayjs.extend(timezone)
+
+// Tasks: things a user needs to get done, each user's own (userId). Open tasks are sorted
+// soonest due first: by due
 // date (overdue first, undated last), then by priority, then oldest first. The model can
 // find them by keyword (searchTasks) or by meaning (searchByMeaning). A done task can have a
 // completion note (doneNote): how it went, or why it no longer applied. Done tasks are deleted
@@ -28,34 +35,37 @@ const openOrder = `
 const selectOpen = db.query(`
   SELECT ${taskColumns}, chats.title AS chatTitle
   FROM tasks LEFT JOIN chats ON chats.id = tasks.chatId
-  WHERE tasks.doneAt IS NULL ORDER BY ${openOrder}
+  WHERE tasks.userId = $userId AND tasks.doneAt IS NULL ORDER BY ${openOrder}
 `)
 const selectDone = db.query(`
   SELECT ${taskColumns}, chats.title AS chatTitle
   FROM tasks LEFT JOIN chats ON chats.id = tasks.chatId
-  WHERE tasks.doneAt IS NOT NULL ORDER BY tasks.doneAt DESC LIMIT $limit
+  WHERE tasks.userId = $userId AND tasks.doneAt IS NOT NULL ORDER BY tasks.doneAt DESC LIMIT $limit
 `)
 const selectDoneSince = db.query(`
-  SELECT ${taskColumns} FROM tasks WHERE tasks.doneAt > $since ORDER BY tasks.doneAt DESC LIMIT $limit
+  SELECT ${taskColumns} FROM tasks
+  WHERE tasks.userId = $userId AND tasks.doneAt > $since ORDER BY tasks.doneAt DESC LIMIT $limit
 `)
-const countDoneRows = db.query(`SELECT COUNT(*) AS count FROM tasks WHERE doneAt IS NOT NULL`)
-const countDueRows = db.query(`SELECT COUNT(*) AS count FROM tasks WHERE doneAt IS NULL AND dueDate <= $today`)
-const selectTask = db.query(`SELECT ${taskColumns} FROM tasks WHERE id = $id`)
+const countDoneRows = db.query(`SELECT COUNT(*) AS count FROM tasks WHERE userId = $userId AND doneAt IS NOT NULL`)
+const countDueRows = db.query(`
+  SELECT COUNT(*) AS count FROM tasks WHERE userId = $userId AND doneAt IS NULL AND dueDate <= $today
+`)
+const selectTask = db.query(`SELECT ${taskColumns} FROM tasks WHERE id = $id AND userId = $userId`)
 const insertTask = db.query(`
-  INSERT INTO tasks (id, title, notes, priority, dueDate, chatId, createdAt, updatedAt)
-  VALUES ($id, $title, $notes, $priority, $dueDate, $chatId, $now, $now)
+  INSERT INTO tasks (id, userId, title, notes, priority, dueDate, chatId, createdAt, updatedAt)
+  VALUES ($id, $userId, $title, $notes, $priority, $dueDate, $chatId, $now, $now)
 `)
 // A new title or notes needs a new vector, so it's cleared until the next search
 const updateTaskRow = db.query(`
   UPDATE tasks SET title = $title, notes = $notes, priority = $priority, dueDate = $dueDate, updatedAt = $now,
     embedding = CASE WHEN title = $title AND notes = $notes THEN embedding ELSE NULL END,
     embeddingModel = CASE WHEN title = $title AND notes = $notes THEN embeddingModel ELSE NULL END
-  WHERE id = $id
+  WHERE id = $id AND userId = $userId
 `)
 const selectSearchCandidates = db.query(`
   SELECT ${taskColumns}, chats.title AS chatTitle, tasks.embedding, tasks.embeddingModel
   FROM tasks LEFT JOIN chats ON chats.id = tasks.chatId
-  WHERE tasks.doneAt IS NULL OR $includeDone = 1
+  WHERE tasks.userId = $userId AND (tasks.doneAt IS NULL OR $includeDone = 1)
   ORDER BY tasks.doneAt IS NOT NULL, ${openOrder}
 `)
 const updateEmbedding = db.query(`
@@ -66,22 +76,20 @@ const updateDone = db.query(`
   UPDATE tasks SET doneAt = $doneAt, doneNote = $doneNote, updatedAt = $now,
     embedding = CASE WHEN doneNote = $doneNote THEN embedding ELSE NULL END,
     embeddingModel = CASE WHEN doneNote = $doneNote THEN embeddingModel ELSE NULL END
-  WHERE id = $id
+  WHERE id = $id AND userId = $userId
 `)
-const deleteTaskRow = db.query(`DELETE FROM tasks WHERE id = $id`)
+const deleteTaskRow = db.query(`DELETE FROM tasks WHERE id = $id AND userId = $userId`)
 const deleteOldDoneRows = db.query(`DELETE FROM tasks WHERE doneAt IS NOT NULL AND doneAt < $before`)
 
-// "2026-11-01": a day in the server's time zone, which is the owner's
-export const toDay = function (date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, `0`)
-  const day = String(date.getDate()).padStart(2, `0`)
-
-  return `${year}-${month}-${day}`
+// "2026-11-01": the day `date` falls on in `zone`, the user's time zone (en-CA writes dates that
+// way)
+export const toDay = function (date, zone) {
+  return new Intl.DateTimeFormat(`en-CA`, { timeZone: zone, year: `numeric`, month: `2-digit`, day: `2-digit` }).format(date)
 }
 
-export const today = function () {
-  return toDay(new Date())
+// Today in the user's time zone
+export const today = function (zone) {
+  return toDay(new Date(), zone)
 }
 
 // Whether `text` is a real day written as YYYY-MM-DD (so not 2026-02-30)
@@ -91,21 +99,20 @@ export const isValidDay = function (text) {
   }
 
   const [year, month, day] = text.split(`-`).map(Number)
-  const date = new Date(year, month - 1, day)
+  const date = new Date(Date.UTC(year, month - 1, day))
 
-  return toDay(date) === text
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
 }
 
-// For an open task with a due date: `overdue`, `today` or `tomorrow`, or null when it's later or
-// has no date. Done tasks are never due.
-export const dueState = function (task) {
+// For an open task with a due date: `overdue`, `today` or `tomorrow` in `zone`, the user's time
+// zone, or null when it's later or has no date. Done tasks are never due.
+export const dueState = function (task, zone) {
   if (task.dueDate == null || task.doneAt != null) {
     return null
   }
 
-  const now = new Date()
-  const todayText = toDay(now)
-  const tomorrowText = toDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1))
+  const todayText = today(zone)
+  const tomorrowText = dayjs().tz(zone).add(1, `day`).format(`YYYY-MM-DD`)
 
   if (task.dueDate < todayText) {
     return `overdue`
@@ -123,8 +130,9 @@ export const dueState = function (task) {
 }
 
 // A task as the model is told about it, e.g.
-// "[id] Book the dentist (high priority; due 2026-11-03, tomorrow)\n  Notes: …"
-export const describeForModel = function (task) {
+// "[id] Book the dentist (high priority; due 2026-11-03, tomorrow)\n  Notes: …", "tomorrow" being
+// in `zone`, the user's time zone
+export const describeForModel = function (task, zone) {
   const details = []
 
   if (task.priority !== `normal`) {
@@ -132,7 +140,7 @@ export const describeForModel = function (task) {
   }
 
   if (task.dueDate != null) {
-    const state = dueState(task)
+    const state = dueState(task, zone)
     details.push(state == null ? `due ${task.dueDate}` : `due ${task.dueDate}, ${state}`)
   }
 
@@ -159,59 +167,61 @@ export const describeForModel = function (task) {
 
 // The tasks still to do, soonest due first; each has the title of the chat it was added in
 // (chatTitle), if any
-export const listOpen = function () {
-  return selectOpen.all()
+export const listOpen = function (userId) {
+  return selectOpen.all({ userId })
 }
 
 // The tasks done most recently, newest first
-export const listDone = function (limit) {
-  return selectDone.all({ limit })
+export const listDone = function (userId, limit) {
+  return selectDone.all({ userId, limit })
 }
 
 // The tasks done after `since` (an ISO date), newest first
-export const listDoneSince = function (since, limit) {
-  return selectDoneSince.all({ since, limit })
+export const listDoneSince = function (userId, since, limit) {
+  return selectDoneSince.all({ userId, since, limit })
 }
 
-export const countDone = function () {
-  const row = countDoneRows.get()
+export const countDone = function (userId) {
+  const row = countDoneRows.get({ userId })
   return row.count
 }
 
-// Open tasks due today or earlier, for the badge on the Tasks nav item
-export const countDue = function () {
-  const row = countDueRows.get({ today: today() })
+// The user's open tasks due today (in `zone`, their time zone) or earlier, for the badge on the
+// Tasks nav item
+export const countDue = function (userId, zone) {
+  const row = countDueRows.get({ userId, today: today(zone) })
   return row.count
 }
 
-export const getTask = function (id) {
-  return selectTask.get({ id }) ?? null
+// The user's task with that id, or null: another user's reads as no task
+export const getTask = function (userId, id) {
+  return selectTask.get({ userId, id }) ?? null
 }
 
-// `chatId` is the chat the model added it in, or null when the owner added it
-export const createTask = function ({ title, notes = ``, priority = `normal`, dueDate = null, chatId = null }) {
+// `chatId` is the chat the model added it in, or null when the user added it
+export const createTask = function ({ userId, title, notes = ``, priority = `normal`, dueDate = null, chatId = null }) {
   const id = cuid()
   const now = new Date().toISOString()
 
-  insertTask.run({ id, title, notes, priority, dueDate, chatId, now })
+  insertTask.run({ id, userId, title, notes, priority, dueDate, chatId, now })
 
-  return getTask(id)
+  return getTask(userId, id)
 }
 
-// Returns the task as it is now, or null when there's no task with that id
-export const updateTask = function (id, { title, notes, priority, dueDate }) {
+// Returns the task as it is now, or null when the user has no task with that id
+export const updateTask = function (userId, id, { title, notes, priority, dueDate }) {
   const now = new Date().toISOString()
 
-  updateTaskRow.run({ id, title, notes, priority, dueDate, now })
+  updateTaskRow.run({ userId, id, title, notes, priority, dueDate, now })
 
-  return getTask(id)
+  return getTask(userId, id)
 }
 
 // Marks the task done, or still to do when `done` is false, which clears its completion note.
 // Marking a done task done again keeps when it was first done. `note` is the completion note:
 // a string replaces it (an empty one removes it), null keeps the one it has.
-export const setDone = function (id, done, note = null) {
-  const task = getTask(id)
+export const setDone = function (userId, id, done, note = null) {
+  const task = getTask(userId, id)
 
   if (task == null) {
     return null
@@ -226,17 +236,17 @@ export const setDone = function (id, done, note = null) {
     doneNote = note ?? task.doneNote
   }
 
-  updateDone.run({ id, doneAt, doneNote, now })
+  updateDone.run({ userId, id, doneAt, doneNote, now })
 
-  return getTask(id)
+  return getTask(userId, id)
 }
 
-export const deleteTask = function (id) {
-  deleteTaskRow.run({ id })
+export const deleteTask = function (userId, id) {
+  deleteTaskRow.run({ userId, id })
 }
 
-// Deletes the tasks done more than doneKeptDays ago, and returns how many went. Open tasks are
-// never touched: putting a done task back on the list clears its doneAt.
+// Deletes every user's tasks done more than doneKeptDays ago, and returns how many went. Open
+// tasks are never touched: putting a done task back on the list clears its doneAt.
 export const deleteOldDone = function () {
   const keptMs = 1000 * 60 * 60 * 24 * doneKeptDays
   const before = new Date(Date.now() - keptMs).toISOString()
@@ -248,15 +258,15 @@ export const deleteOldDone = function () {
 
 // Tasks whose title, notes or completion note contain the words in `query`, those with the most
 // of the words first; ties keep the list's order (open before done, soonest due first)
-export const searchTasks = function ({ query, includeDone = false, limit = 20 }) {
+export const searchTasks = function ({ userId, query, includeDone = false, limit = 20 }) {
   const words = query.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(function (word) {
     return word.length >= 2
   })
 
-  let candidates = listOpen()
+  let candidates = listOpen(userId)
 
   if (includeDone) {
-    candidates = [...candidates, ...listDone(200)]
+    candidates = [...candidates, ...listDone(userId, 200)]
   }
 
   const scored = []
@@ -292,8 +302,8 @@ export const searchTasks = function ({ query, includeDone = false, limit = 20 })
 // The tasks closest in meaning to `query` (by their title, notes and completion note), closest
 // first, each with its similarity as `score` and the title of the chat it was added in
 // (chatTitle), if any. Asks Lemonade, so it can be slow or fail; see services/embeddings.js.
-export const searchByMeaning = async function ({ query, model, includeDone = false, limit = 5, signal }) {
-  const rows = selectSearchCandidates.all({ includeDone: includeDone ? 1 : 0 })
+export const searchByMeaning = async function ({ userId, query, model, includeDone = false, limit = 5, signal }) {
+  const rows = selectSearchCandidates.all({ userId, includeDone: includeDone ? 1 : 0 })
 
   const ranked = await rankByMeaning({
     rows,

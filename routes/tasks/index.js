@@ -13,7 +13,13 @@ const searchTimeout = 1000 * 60 * 2
 // The tasks to do, and those done. With ?q=, the tasks closest in meaning to it instead, done
 // ones too, found with the embedding model as the chat model finds them.
 export const GET = async function (ctx) {
+  const userId = ctx.state.user.id
+  const zone = ctx.state.user.timeZone
   const q = typeof ctx.query.q === `string` ? ctx.query.q.trim() : ``
+
+  const toPage = function (task) {
+    return toPageTask(task, zone)
+  }
 
   let results = null
   let searchError = null
@@ -22,11 +28,11 @@ export const GET = async function (ctx) {
     const model = tools.getEmbeddingModel()
 
     if (model == null) {
-      searchError = `Searching by meaning needs an embedding model; choose one in Settings.`
+      searchError = `Searching by meaning needs an embedding model; name one in config.js.`
     } else {
       try {
-        const closest = await tasks.searchByMeaning({ query: q, model, includeDone: true, limit: searchLimit, signal: AbortSignal.timeout(searchTimeout) })
-        results = closest.map(toPageTask)
+        const closest = await tasks.searchByMeaning({ userId, query: q, model, includeDone: true, limit: searchLimit, signal: AbortSignal.timeout(searchTimeout) })
+        results = closest.map(toPage)
       } catch (err) {
         console.error(err)
         searchError = `Couldn't search: ${err.message}`
@@ -34,8 +40,8 @@ export const GET = async function (ctx) {
     }
   }
 
-  const openTasks = tasks.listOpen().map(toPageTask)
-  const doneTasks = tasks.listDone(doneShown).map(toPageTask)
+  const openTasks = tasks.listOpen(userId).map(toPage)
+  const doneTasks = tasks.listDone(userId, doneShown).map(toPage)
 
   const dueCount = openTasks.filter(function (task) {
     return task.dueState === `overdue` || task.dueState === `today`
@@ -47,7 +53,7 @@ export const GET = async function (ctx) {
   ctx.body = ctx.nunjucks(`tasks/index`, {
     openTasks,
     doneTasks,
-    doneCount: tasks.countDone(),
+    doneCount: tasks.countDone(userId),
     dueCount,
     maxDoneNoteLength: tasks.maxDoneNoteLength,
     doneKeptDays: tasks.doneKeptDays,
@@ -70,7 +76,7 @@ export const POST = async function (ctx) {
     return ctx.redirect(`/tasks`)
   }
 
-  tasks.createTask({ ...fields, chatId: null })
+  tasks.createTask({ ...fields, userId: ctx.state.user.id, chatId: null })
 
   return ctx.redirect(`/tasks`)
 }

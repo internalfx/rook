@@ -6,7 +6,7 @@ import runs from '../../../services/runs.js'
 // is the chat being deleted, in which case the browser lands on a new chat.
 export const POST = async function (ctx) {
   const chatId = ctx.state.params.id
-  const chat = chats.getChat(chatId)
+  const chat = chats.getChat(ctx.state.user.id, chatId)
 
   if (chat != null) {
     // A reply still running would otherwise keep saving messages to the deleted chat

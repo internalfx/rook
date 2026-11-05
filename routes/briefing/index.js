@@ -1,5 +1,10 @@
 import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc'
+import timezone from 'dayjs/plugin/timezone'
 import briefings from '../../services/briefings.js'
+
+dayjs.extend(utc)
+dayjs.extend(timezone)
 
 // How long something took, e.g. "45 s", "1 min 37 s", or "1 h 3 min" once it's an hour or more
 const describeDuration = function (ms) {
@@ -19,11 +24,12 @@ const describeDuration = function (ms) {
   return `${seconds} s`
 }
 
-// A briefing as the page shows it: when it ran, in words, how long it took, and how many tools it
-// called. Only a finished one has a time: one that failed when the server restarted was marked
-// finished at the restart, which can be long after it stopped.
-const toPageBriefing = function (briefing) {
-  const started = dayjs(briefing.startedAt)
+// A briefing as the page shows it: when it ran, in words and in `zone`, the user's time zone, how
+// long it took, and how many tools it called. Only a finished one has a time: one that failed
+// when the server restarted was marked finished at the restart, which can be long after it
+// stopped.
+const toPageBriefing = function (briefing, zone) {
+  const started = dayjs(briefing.startedAt).tz(zone)
 
   const toolMessages = briefing.transcript.filter(function (message) {
     return message.role === `tool`
@@ -58,13 +64,15 @@ const buildTranscriptsJSON = function (briefingList) {
 }
 
 export const GET = async function (ctx) {
-  const latest = briefings.getLatest()
+  const userId = ctx.state.user.id
+  const zone = ctx.state.user.timeZone
+  const latest = briefings.getLatest(userId)
   // Only one earlier briefing is kept (see keptBriefings in services/briefings.js)
-  const earlier = briefings.listEarlier(1)
-  const nextDue = briefings.getNextDue()
+  const earlier = briefings.listEarlier(userId, 1)
+  const nextDue = briefings.getNextDue(userId)
 
   // Before rendering, so this page's own nav item doesn't show the dot
-  briefings.markViewed()
+  briefings.markViewed(userId)
 
   // "in 3 hours", or null while scheduled briefings are off
   let nextText = null
@@ -77,10 +85,12 @@ export const GET = async function (ctx) {
   const shown = latest == null ? earlier : [latest, ...earlier]
 
   ctx.body = ctx.nunjucks(`briefing/index`, {
-    latest: latest == null ? null : toPageBriefing(latest),
-    earlier: earlier.map(toPageBriefing),
+    latest: latest == null ? null : toPageBriefing(latest, zone),
+    earlier: earlier.map(function (briefing) {
+      return toPageBriefing(briefing, zone)
+    }),
     transcriptsJSON: buildTranscriptsJSON(shown),
-    isRunning: briefings.isRunning(),
+    isRunning: briefings.isRunning(userId),
     nextText,
   })
 }

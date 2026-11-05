@@ -78,7 +78,6 @@ export default async function (ctx, next) {
 
     ctx.state.token = token
     ctx.state.session = session
-    ctx.state.username = session.data.username
 
     ctx.writeSession = function (key, value) {
       const data = { ...ctx.state.session.data, [key]: value }
@@ -114,7 +113,6 @@ export default async function (ctx, next) {
 
       ctx.state.token = newToken
       ctx.state.session = newSession
-      ctx.state.username = newSession.data.username
     }
   }
 

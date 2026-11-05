@@ -9,7 +9,7 @@ import { matchDomain, extrasFor, describeDomains } from './sites.js'
 // Loads web pages for the read_web_page tool (in a headless browser, see browser.js) and turns
 // them into Markdown. Pages are mostly scripts, styles and embedded data (GitHub's run from a
 // few hundred KB to over a megabyte); those, and every attribute but links, are removed first,
-// then what's left is converted, which takes milliseconds. With a page reader chosen in Settings
+// then what's left is converted, which takes milliseconds. With a page reader named in config.js
 // (a MinerU-HTML model), the model first picks out the page's main content to convert, which
 // takes a few seconds, and images are kept too (mainContent.js).
 

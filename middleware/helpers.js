@@ -52,7 +52,7 @@ export default async function (ctx, next) {
     // briefingIsNew, notificationsUnseen and tasksBadge, for the nav items
     const output = nunjucks.render(
       templatePath,
-      { ...locals, ...tools, ctx, config, ...indicators.readIndicators() },
+      { ...locals, ...tools, ctx, config, ...indicators.readIndicators(ctx.state.user ?? null) },
     )
     // console.timeEnd(label)
     return output

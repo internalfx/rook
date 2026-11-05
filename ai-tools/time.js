@@ -53,23 +53,18 @@ const convertTimeTool = {
   },
 }
 
-// The server's time zone, which is the owner's
-export const getOwnTimeZone = function () {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone
-}
-
-// The time now in the server's time zone, which is the owner's, written out so the model can't
-// misread it, with the ISO form for working things out. Also told to briefings.
-export const describeCurrentTime = function () {
+// The time now in the user's time zone (their Settings, or the server's), written out so the
+// model can't misread it, with the ISO form for working things out. Also told to briefings.
+export const describeCurrentTime = function (user) {
   const now = new Date()
-  const timeZone = getOwnTimeZone()
+  const timeZone = user.timeZone
   const localTime = now.toLocaleString(`en-US`, { dateStyle: `full`, timeStyle: `long`, timeZone })
 
   return `It's ${localTime} (time zone ${timeZone}). In UTC: ${now.toISOString()}`
 }
 
-const runGetCurrentTime = function () {
-  return { content: describeCurrentTime(), imageId: null }
+const runGetCurrentTime = function ({ user }) {
+  return { content: describeCurrentTime(user), imageId: null }
 }
 
 // The most zones convert_time converts to at once
@@ -269,10 +264,11 @@ const describeZoneName = function (instant, zone) {
   return parts.find((part) => part.type === `timeZoneName`)?.value ?? zone
 }
 
-// "15:00 (3:00 PM) Mon 2 Nov 2026 in America/Denver (Mountain Standard Time, UTC-07:00)"
-const describeZoneTime = function (instant, zone) {
+// "15:00 (3:00 PM) Mon 2 Nov 2026 in America/Denver (Mountain Standard Time, UTC-07:00)", marked
+// when `zone` is the user's own (`userZone`)
+const describeZoneTime = function (instant, zone, userZone) {
   const local = instant.tz(zone)
-  const ownZone = zone === getOwnTimeZone() ? `, the user's time zone` : ``
+  const ownZone = zone === userZone ? `, the user's time zone` : ``
 
   return `${local.format(`HH:mm (h:mm A) ddd D MMM YYYY`)} in ${zone} (${describeZoneName(instant, zone)}, UTC${local.format(`Z`)}${ownZone})`
 }
@@ -318,9 +314,10 @@ const describeDifference = function (instant, fromZone, toZone) {
   return text
 }
 
-// The time in `fromZone` (now, when there's no time) in each of `toZones`, written out. Throws an
-// error marked isCalculationError saying what's wrong with the call.
-export const convertTime = function ({ time, fromZone, toZones }) {
+// The time in `fromZone` (now, when there's no time) in each of `toZones`, written out. Either
+// left out means `userZone`, the user's own. Throws an error marked isCalculationError saying
+// what's wrong with the call.
+export const convertTime = function ({ time, fromZone, toZones, userZone }) {
   const notes = []
   const readZone = function (text) {
     const { zone, note } = readTimeZone(text)
@@ -334,13 +331,13 @@ export const convertTime = function ({ time, fromZone, toZones }) {
 
   // Left out, or left empty, means the user's own
   const isGiven = (text) => typeof text === `string` && text.trim() !== ``
-  const from = isGiven(fromZone) ? readZone(fromZone) : getOwnTimeZone()
+  const from = isGiven(fromZone) ? readZone(fromZone) : userZone
 
   let toList = typeof toZones === `string` ? [toZones] : toZones
   toList = Array.isArray(toList) ? toList.filter(isGiven) : []
 
   if (toList.length === 0) {
-    toList = [getOwnTimeZone()]
+    toList = [userZone]
   }
 
   const to = [...new Set(toList.slice(0, maxToZones).map(readZone))].filter((zone) => zone !== from)
@@ -356,7 +353,7 @@ export const convertTime = function ({ time, fromZone, toZones }) {
     }
   }
 
-  const fromText = describeZoneTime(instant, from)
+  const fromText = describeZoneTime(instant, from, userZone)
   const lines = []
 
   if (to.length === 0) {
@@ -365,7 +362,7 @@ export const convertTime = function ({ time, fromZone, toZones }) {
     lines.push(asked == null ? `It's now ${fromText}. There, it's:` : `${fromText} is:`)
 
     for (const zone of to) {
-      lines.push(`- ${describeZoneTime(instant, zone)}: ${describeDifference(instant, from, zone)}`)
+      lines.push(`- ${describeZoneTime(instant, zone, userZone)}: ${describeDifference(instant, from, zone)}`)
     }
   }
 
@@ -378,11 +375,11 @@ export const convertTime = function ({ time, fromZone, toZones }) {
 
 // A mistake in the call is told to the model, so it can fix it; anything else is a bug, and goes
 // on to runTool to be logged
-const runConvertTime = function ({ argumentsText }) {
+const runConvertTime = function ({ argumentsText, user }) {
   const args = parseArguments(argumentsText) ?? {}
 
   try {
-    const content = convertTime({ time: args.time, fromZone: args.from_zone, toZones: args.to_zones })
+    const content = convertTime({ time: args.time, fromZone: args.from_zone, toZones: args.to_zones, userZone: user.timeZone })
 
     return { content, imageId: null }
   } catch (err) {
@@ -411,7 +408,6 @@ export const tools = [
 ]
 
 export default {
-  getOwnTimeZone,
   describeCurrentTime,
   readTime,
   checkClockChange,

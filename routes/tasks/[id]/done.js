@@ -21,7 +21,7 @@ export const POST = async function (ctx) {
   }
 
   // An empty note comes through as null, and means no note; putting it back removes the note
-  const task = tasks.setDone(ctx.state.params.id, args.done, args.done ? (args.doneNote ?? ``) : null)
+  const task = tasks.setDone(ctx.state.user.id, ctx.state.params.id, args.done, args.done ? (args.doneNote ?? ``) : null)
 
   if (task == null) {
     ctx.addFlash(`That task no longer exists.`, `error`)

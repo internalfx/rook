@@ -2,7 +2,6 @@ import joi from '../../services/joi.js'
 import lemonade from '../../services/lemonade.js'
 import chats from '../../services/chats.js'
 import images from '../../services/images.js'
-import settings from '../../services/settings.js'
 import tools from '../../ai-tools/index.js'
 import runs from '../../services/runs.js'
 import { readModelReply } from '../../services/modelStream.js'
@@ -31,17 +30,18 @@ const maxImageBytes = 5 * 1024 * 1024
 // The chat page sends every image as a JPEG, whatever it was (see shrinkImage there)
 const jpegDataUrlStart = `data:image/jpeg;base64,`
 
-// What every chat starts with: the chat prompt, then the pinned memories. One system message,
-// since some models' chat templates only accept one, as briefings do. Null when both are empty.
-const buildSystemMessage = function () {
+// What every chat of the user's starts with: the chat prompt, then their pinned memories. One
+// system message, since some models' chat templates only accept one, as briefings do. Null when
+// both are empty.
+const buildSystemMessage = function (user) {
   const parts = []
-  const prompt = prompts.chat.system({ appName: config.appName, ownerName: config.owner.name }).trim()
+  const prompt = prompts.chat.system({ appName: config.appName, userName: user.name }).trim()
 
   if (prompt !== ``) {
     parts.push(prompt)
   }
 
-  const memoriesMessage = tools.buildMemoriesMessage()
+  const memoriesMessage = tools.buildMemoriesMessage(user.id)
 
   if (memoriesMessage != null) {
     parts.push(memoriesMessage.content)
@@ -181,7 +181,7 @@ const readAttachedImages = function (dataUrls) {
 // it isn't run, since the model expects an answer to each call it made. With `skipReason`, no
 // call is run and that's the result of each. `callCounts` holds how many times each tool has been
 // called for this message so far, by name, and is added to. Returns true when the user stopped.
-const runToolCalls = async function ({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes, callCounts, skipReason = null }) {
+const runToolCalls = async function ({ toolCalls, user, chat, chatTools, history, sendEvent, abort, titleNotes, callCounts, skipReason = null }) {
   for (const call of toolCalls) {
     const name = call.function.name
     const callCount = (callCounts[name] ?? 0) + 1
@@ -202,7 +202,7 @@ const runToolCalls = async function ({ toolCalls, chat, chatTools, history, send
       result = { content: `The user stopped this before it ran.`, imageId: null }
     } else {
       try {
-        result = await tools.runTool({ name, argumentsText, chatTools, chatId: chat.id, signal: abort.signal })
+        result = await tools.runTool({ name, argumentsText, chatTools, user, chatId: chat.id, signal: abort.signal })
       } catch (err) {
         result = { content: `The user stopped this before it finished.`, imageId: null }
       }
@@ -238,16 +238,16 @@ const runToolCalls = async function ({ toolCalls, chat, chatTools, history, send
 //   { type: "title", title }                              a new chat's title
 //   { type: "error", message }
 // After tool calls the model is asked again, so it can answer with the results in hand.
-// The model and tools are Settings' as the message was sent, kept for the whole reply. It runs
+// The model and tools are config.js's as the message was sent, kept for the whole reply. It runs
 // on its own, whether or not a browser is watching, until it finishes or the run is stopped.
-const runConversation = async function ({ history, chat, model, chatTools, userText, run }) {
+const runConversation = async function ({ history, user, chat, model, chatTools, userText, run }) {
   const toolDefinitions = tools.getToolDefinitions(chatTools)
   const abort = run.abort
 
   // The chat prompt and pinned memories start the conversation the model sees, but aren't saved
   // with it. Taken once per message, so the start stays the same through every round, even when
   // the model pins a memory part way.
-  const systemMessage = buildSystemMessage()
+  const systemMessage = buildSystemMessage(user)
 
   const sendEvent = function (event) {
     runs.emit(run, event)
@@ -330,11 +330,11 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
 
       if (isLastRound) {
         const skipReason = `Not run: the limit of replies for one message was reached.`
-        await runToolCalls({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes, callCounts, skipReason })
+        await runToolCalls({ toolCalls, user, chat, chatTools, history, sendEvent, abort, titleNotes, callCounts, skipReason })
         break
       }
 
-      const stopped = await runToolCalls({ toolCalls, chat, chatTools, history, sendEvent, abort, titleNotes, callCounts })
+      const stopped = await runToolCalls({ toolCalls, user, chat, chatTools, history, sendEvent, abort, titleNotes, callCounts })
 
       if (stopped === true) {
         break
@@ -358,11 +358,13 @@ const runConversation = async function ({ history, chat, model, chatTools, userT
   }
 }
 
-// Sends one message in a chat, with up to maxImagesPerMessage images (JPEG data URLs), starts
-// the reply running on the server (see runConversation) and streams it back. Without a chatId,
-// a new chat is created; its id is returned in the X-Chat-Id header. The history comes from the
-// database, and the Lemonade API key never leaves the server.
+// Sends one message in a chat of the user's, with up to maxImagesPerMessage images (JPEG data
+// URLs), starts the reply running on the server (see runConversation) and streams it back.
+// Without a chatId, a new chat is created; its id is returned in the X-Chat-Id header. The
+// history comes from the database, and the Lemonade API key never leaves the server.
 export const POST = async function (ctx) {
+  const user = ctx.state.user
+
   let args
 
   try {
@@ -388,19 +390,19 @@ export const POST = async function (ctx) {
     ctx.throw(400, problem)
   }
 
-  // Every chat uses the models and tools in Settings as they are now
-  const model = settings.get(`chatModel`)
-  const chatTools = tools.getChatTools()
+  // Every chat uses the models and tools in config.js
+  const model = config.models.chat
+  const chatTools = tools.getChatTools(user)
 
   if (model == null) {
-    ctx.throw(400, `Choose a chat model in Settings first.`)
+    ctx.throw(400, `Name a chat model in config.js first.`)
   }
 
   let chat = null
   let savedMessages = []
 
   if (args.chatId != null) {
-    chat = chats.getChat(args.chatId)
+    chat = chats.getChat(user.id, args.chatId)
 
     if (chat == null) {
       ctx.throw(404, `That chat no longer exists.`)
@@ -432,11 +434,11 @@ export const POST = async function (ctx) {
   }
 
   if (buffers.length > 0 && seesImages === false) {
-    ctx.throw(400, `This chat model can't see images. Choose one that can in Settings.`)
+    ctx.throw(400, `This chat model can't see images. Name one that can in config.js.`)
   }
 
   if (chat == null) {
-    chat = chats.createChat()
+    chat = chats.createChat(user.id)
   }
 
   const imageIds = []
@@ -452,7 +454,7 @@ export const POST = async function (ctx) {
   const history = await toModelHistory(chats.getMessages(chat.id), { seesImages })
   const run = runs.startRun({ chatId: chat.id, baseCount: history.length })
 
-  runConversation({ history, chat, model, chatTools, userText: text, run })
+  runConversation({ history, user, chat, model, chatTools, userText: text, run })
 
   ctx.set(`X-Chat-Id`, chat.id)
   watchRunResponse(ctx, run)

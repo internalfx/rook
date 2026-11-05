@@ -1,6 +1,7 @@
 import cuid from 'cuid'
 import db from './db.js'
 import lemonade from './lemonade.js'
+import config from '../configure.js'
 import settings from './settings.js'
 import tools from '../ai-tools/index.js'
 import memories from './memories.js'
@@ -10,23 +11,25 @@ import runs from './runs.js'
 import { readModelReply } from './modelStream.js'
 import notifications from './notifications.js'
 import slack from './slack.js'
+import users from './users.js'
 import { maxCallsPerTool, maxRounds, describeCallLimit } from '../ai-tools/limits.js'
 import prompts from '../prompts.js'
 
-// A briefing runs the chat model in the background, with no one watching: it looks over the
-// memories, tasks, recent chats and Slack conversations picked in Settings, tidies the memories
-// and tasks, and writes the user a short overview. Discuss on the Briefing page starts a chat with
-// that overview as the model's first message. For something that matters now, it can notify the
-// user (services/notifications.js), or schedule a notification for when it will matter.
-// Briefings run on a schedule (see runIfDue) or when asked for.
+// A briefing runs the chat model in the background for one user, with no one watching: it looks
+// over their memories, tasks, recent chats and the Slack conversations they picked in Settings,
+// tidies the memories and tasks, and writes them a short overview. Discuss on the Briefing page
+// starts a chat with that overview as the model's first message. For something that matters now,
+// it can notify the user (services/notifications.js), or schedule a notification for when it will
+// matter. Briefings run on a schedule set in config.js, for every user (see runIfDue), or when a
+// user asks for one.
 //
-// The running briefing lives in memory, like chat replies (services/runs.js), so restarting the
-// server ends it.
+// Running briefings live in memory, like chat replies (services/runs.js), so restarting the
+// server ends them.
 
 // How many notifications one briefing can send
 const maxNotifications = 2
 
-// The latest briefing and one before it are kept; older ones are deleted
+// Each user's latest briefing and one before it are kept; older ones are deleted
 const keptBriefings = 2
 
 // What the model is shown
@@ -53,7 +56,7 @@ const skippedLookBack = 1000 * 60 * 60 * 24
 const slackMessageLimit = 30
 const slackThreadLimit = 3
 
-// Used until an interval is chosen in Settings
+// Used while config.js names no interval
 export const defaultBriefingMinutes = 360
 
 // The only chat tools a briefing has: it doesn't search the web or make images. It sees the
@@ -67,8 +70,8 @@ const briefingToolNames = [
 ]
 
 const insertBriefing = db.query(`
-  INSERT INTO briefings (id, status, startedBy, startedAt)
-  VALUES ($id, 'running', $startedBy, $now)
+  INSERT INTO briefings (id, userId, status, startedBy, startedAt)
+  VALUES ($id, $userId, 'running', $startedBy, $now)
 `)
 const finishBriefingRow = db.query(`
   UPDATE briefings SET status = $status, overview = $overview, error = $error, transcript = $transcript, finishedAt = $now
@@ -78,22 +81,29 @@ const failStaleBriefings = db.query(`
   UPDATE briefings SET status = 'failed', error = $error, finishedAt = $now WHERE status = 'running'
 `)
 const selectFinished = db.query(`
-  SELECT * FROM briefings WHERE status != 'running' ORDER BY startedAt DESC LIMIT $limit OFFSET $offset
+  SELECT * FROM briefings WHERE userId = $userId AND status != 'running'
+  ORDER BY startedAt DESC LIMIT $limit OFFSET $offset
 `)
-const selectBriefing = db.query(`SELECT * FROM briefings WHERE id = $id`)
-const selectLastStarted = db.query(`SELECT startedAt FROM briefings ORDER BY startedAt DESC LIMIT 1`)
+const selectBriefing = db.query(`SELECT * FROM briefings WHERE id = $id AND userId = $userId`)
+const selectLastStarted = db.query(`
+  SELECT startedAt FROM briefings WHERE userId = $userId ORDER BY startedAt DESC LIMIT 1
+`)
 const deleteOldBriefings = db.query(`
-  DELETE FROM briefings WHERE id NOT IN (SELECT id FROM briefings ORDER BY startedAt DESC LIMIT $keep)
+  DELETE FROM briefings WHERE userId = $userId AND id NOT IN (
+    SELECT id FROM briefings WHERE userId = $userId ORDER BY startedAt DESC LIMIT $keep
+  )
 `)
 
-const selectLastFinishedAt = db.query(`SELECT MAX(finishedAt) AS finishedAt FROM briefings WHERE status != 'running'`)
+const selectLastFinishedAt = db.query(`
+  SELECT MAX(finishedAt) AS finishedAt FROM briefings WHERE userId = $userId AND status != 'running'
+`)
 
 // A briefing still marked running was cut off by a restart
 failStaleBriefings.run({ error: `The server restarted during the briefing.`, now: new Date().toISOString() })
 
-// The briefing running now, as { id, abort, run, finished }, or null. `run` is what the Briefing
-// page watches (see services/runs.js); `finished` settles once it's saved.
-let current = null
+// The briefings running now, by user id, each as { id, user, abort, run, finished }. `run` is
+// what the Briefing page watches (see services/runs.js); `finished` settles once it's saved.
+const running = new Map()
 
 // What a cancelled briefing's error says, after "This briefing didn't finish:"
 const cancelledError = `You cancelled it.`
@@ -135,9 +145,9 @@ const formatDay = function (iso) {
   return iso.slice(0, 10)
 }
 
-// "Nov 1, 2026, 9:58 AM", in the server's time zone, which is the owner's
-const describeWhen = function (iso) {
-  return new Date(iso).toLocaleString(`en-US`, { dateStyle: `medium`, timeStyle: `short` })
+// "Nov 1, 2026, 9:58 AM", in the user's time zone
+const describeWhen = function (iso, zone) {
+  return new Date(iso).toLocaleString(`en-US`, { dateStyle: `medium`, timeStyle: `short`, timeZone: zone })
 }
 
 const shorten = function (text, limit = messageCharLimit) {
@@ -150,13 +160,14 @@ const shorten = function (text, limit = messageCharLimit) {
   return `${trimmed.slice(0, limit)}…`
 }
 
-// The searchable memories it can tidy, with their ids. Pinned ones are in the system message.
-const describeMemories = function () {
+// The user's searchable memories it can tidy, with their ids. Pinned ones are in the system
+// message.
+const describeMemories = function (user) {
   if (tools.isMemoriesOn() === false) {
-    return `Memories are off in Settings, so you have none and can't save any.`
+    return `Memories are off in config.js, so you have none and can't save any.`
   }
 
-  const recent = memories.listRecent(recentMemoryLimit)
+  const recent = memories.listRecent(user.id, recentMemoryLimit)
 
   if (recent.length === 0) {
     return `You have no searchable memories yet.`
@@ -169,29 +180,29 @@ const describeMemories = function () {
   return `Your searchable memories, most recently changed first (up to ${recentMemoryLimit}; find others with search_memories):\n${lines.join(`\n`)}`
 }
 
-const describeTaskLines = function (taskList) {
+const describeTaskLines = function (taskList, zone) {
   const lines = taskList.map(function (task) {
-    return `- ${tasks.describeForModel(task)}`
+    return `- ${tasks.describeForModel(task, zone)}`
   })
 
   return lines.join(`\n`)
 }
 
-// The open tasks, soonest due first, then those done in the last week, with their ids so it
-// can change them
-const describeTasks = function () {
+// The user's open tasks, soonest due first, then those done in the last week, with their ids so
+// it can change them
+const describeTasks = function (user) {
   if (tools.isTasksOn() === false) {
-    return `Tasks are off in Settings, so you can't see or change them.`
+    return `Tasks are off in config.js, so you can't see or change them.`
   }
 
-  const openTasks = tasks.listOpen()
+  const openTasks = tasks.listOpen(user.id)
 
   let text = `The to-do list is empty.`
 
   if (openTasks.length > 0) {
     const listed = openTasks.slice(0, openTaskLimit)
 
-    text = `The tasks still to do, soonest due first (up to ${openTaskLimit}; find others with find_tasks):\n${describeTaskLines(listed)}`
+    text = `The tasks still to do, soonest due first (up to ${openTaskLimit}; find others with find_tasks):\n${describeTaskLines(listed, user.timeZone)}`
 
     if (openTasks.length > listed.length) {
       text = `${text}\n…and ${openTasks.length - listed.length} more.`
@@ -199,10 +210,10 @@ const describeTasks = function () {
   }
 
   const since = new Date(Date.now() - doneTaskLookBack).toISOString()
-  const doneTasks = tasks.listDoneSince(since, doneTaskLimit)
+  const doneTasks = tasks.listDoneSince(user.id, since, doneTaskLimit)
 
   if (doneTasks.length > 0) {
-    text = `${text}\n\nDone in the last 7 days, most recent first (up to ${doneTaskLimit}):\n${describeTaskLines(doneTasks)}`
+    text = `${text}\n\nDone in the last 7 days, most recent first (up to ${doneTaskLimit}):\n${describeTaskLines(doneTasks, user.timeZone)}`
   }
 
   return text
@@ -239,33 +250,33 @@ const describeChat = function (chat) {
   return `### ${chat.title ?? `Untitled chat`} (last active ${formatDay(chat.updatedAt)})\n${lines.join(`\n`)}`
 }
 
-// Every notification from the last two weeks, whichever briefing sent it
-const describeRecentNotifications = function () {
+// Every notification sent the user in the last two weeks, whichever briefing sent it
+const describeRecentNotifications = function (user) {
   const since = new Date(Date.now() - notificationLookBack).toISOString()
-  const sent = notifications.listSentSince(since, historyLimit)
+  const sent = notifications.listSentSince(user.id, since, historyLimit)
 
   if (sent.length === 0) {
     return `None in the last 14 days.`
   }
 
   const lines = sent.map(function (notification) {
-    return `- ${describeWhen(notification.createdAt)}: "${notification.title}": ${notification.message}`
+    return `- ${describeWhen(notification.createdAt, user.timeZone)}: "${notification.title}": ${notification.message}`
   })
 
   return `Newest first (up to ${historyLimit}):\n${lines.join(`\n`)}`
 }
 
-// The scheduled notifications waiting to be sent, with their ids so it can cancel them, then
-// those skipped or missed lately, so it knows what didn't go out
-const describeScheduledNotifications = function () {
-  const waiting = notifications.listWaiting()
-  const skipped = notifications.listSkippedSince(new Date(Date.now() - skippedLookBack))
+// The user's scheduled notifications waiting to be sent, with their ids so it can cancel them,
+// then those skipped or missed lately, so it knows what didn't go out
+const describeScheduledNotifications = function (user) {
+  const waiting = notifications.listWaiting(user.id)
+  const skipped = notifications.listSkippedSince(user.id, new Date(Date.now() - skippedLookBack))
 
   let text = `None are waiting.`
 
   if (waiting.length > 0) {
     const lines = waiting.map(function (scheduled) {
-      return `- ${tools.describeScheduledNotification(scheduled)}`
+      return `- ${tools.describeScheduledNotification(scheduled, user.timeZone)}`
     })
 
     text = `Soonest first. Just before each is due, it's checked against what's happened since, then sent, delayed or skipped.\n${lines.join(`\n`)}`
@@ -274,7 +285,7 @@ const describeScheduledNotifications = function () {
   if (skipped.length > 0) {
     const lines = skipped.map(function (scheduled) {
       const outcome = scheduled.status === `missed` ? `Missed` : `Skipped`
-      return `- ${outcome} "${scheduled.title}" (due ${tools.describeSendTime(scheduled.sendAt)}): ${scheduled.note}`
+      return `- ${outcome} "${scheduled.title}" (due ${tools.describeSendTime(scheduled.sendAt, user.timeZone)}): ${scheduled.note}`
     })
 
     text = `${text}\n\nNot sent in the last 24 hours, most recent first:\n${lines.join(`\n`)}`
@@ -283,10 +294,10 @@ const describeScheduledNotifications = function () {
   return text
 }
 
-// The most recently active chats, whatever their age, so the model always sees what's been talked
-// about lately
-const describeRecentChats = function () {
-  const recent = chats.listRecentChats(recentChatLimit)
+// The user's most recently active chats, whatever their age, so the model always sees what's
+// been talked about lately
+const describeRecentChats = function (user) {
+  const recent = chats.listRecentChats(user.id, recentChatLimit)
 
   if (recent.length === 0) {
     return `There are no chats yet.`
@@ -297,11 +308,12 @@ const describeRecentChats = function () {
   return `The most recently active chats, most recent first (up to ${recentChatLimit}, each with its last ${messagesPerChat} messages). Some may be old; each says when it was last active.\n\n${sections.join(`\n\n`)}`
 }
 
-// The newest messages in each picked Slack conversation, whatever their age, so the model always
-// sees where each conversation stands; one with no messages at all is left out. Null while Slack
-// is off. A failure to read Slack is said in the section, so the briefing goes on without it.
-const describeSlack = async function (signal) {
-  const conversations = tools.getSlackChannels()
+// The newest messages in each Slack conversation the user picked, whatever their age, so the
+// model always sees where each conversation stands; one with no messages at all is left out. Null
+// while Slack is off for them. A failure to read Slack is said in the section, so the briefing
+// goes on without it.
+const describeSlack = async function (user, signal) {
+  const conversations = tools.getSlackChannels(user)
 
   if (conversations.length === 0) {
     return null
@@ -313,6 +325,8 @@ const describeSlack = async function (signal) {
     // Read all at once; the sections keep the order of the picks
     const reads = conversations.map(function (conversation) {
       return slack.readConversation({
+        userId: user.id,
+        timeZone: user.timeZone,
         channelId: conversation.id,
         oldest: null,
         limit: slackMessageLimit,
@@ -351,8 +365,8 @@ const describeSlack = async function (signal) {
 }
 
 // One system message, since some models' chat templates only accept one, at the start
-const buildSystemMessage = function () {
-  const memoriesMessage = tools.buildMemoriesMessage()
+const buildSystemMessage = function (user) {
+  const memoriesMessage = tools.buildMemoriesMessage(user.id)
 
   let content = prompts.briefing.instructions
 
@@ -363,19 +377,19 @@ const buildSystemMessage = function () {
   return { role: `system`, content }
 }
 
-// What rook tells the model about the state of things, as the user's message. Pass `signal` to
-// cancel reading Slack.
-const buildContext = async function (signal) {
+// What rook tells the model about the state of the user's things, as the user's message. Pass
+// `signal` to cancel reading Slack.
+const buildContext = async function (user, signal) {
   const sections = [
-    tools.describeCurrentTime(),
-    `## Memories\n\n${describeMemories()}`,
-    `## Tasks\n\n${describeTasks()}`,
-    `## Notifications you've sent recently\n\n${describeRecentNotifications()}`,
-    `## Notifications waiting to be sent\n\n${describeScheduledNotifications()}`,
-    `## Recent chats\n\n${describeRecentChats()}`,
+    tools.describeCurrentTime(user),
+    `## Memories\n\n${describeMemories(user)}`,
+    `## Tasks\n\n${describeTasks(user)}`,
+    `## Notifications you've sent recently\n\n${describeRecentNotifications(user)}`,
+    `## Notifications waiting to be sent\n\n${describeScheduledNotifications(user)}`,
+    `## Recent chats\n\n${describeRecentChats(user)}`,
   ]
 
-  const slackText = await describeSlack(signal)
+  const slackText = await describeSlack(user, signal)
 
   if (slackText != null) {
     sections.push(`## Slack\n\n${slackText}`)
@@ -384,7 +398,7 @@ const buildContext = async function (signal) {
   return sections.join(`\n\n`)
 }
 
-const notifyUser = async function ({ argumentsText, briefingId, state }) {
+const notifyUser = async function ({ argumentsText, user, briefingId, state }) {
   if (state.notificationCount >= maxNotifications) {
     return `Not sent: a briefing can send at most ${maxNotifications} notifications.`
   }
@@ -405,7 +419,7 @@ const notifyUser = async function ({ argumentsText, briefingId, state }) {
     return `Not sent: a notification needs a title and a message.`
   }
 
-  const notification = await notifications.sendNotification({ title, message, priority, briefingId })
+  const notification = await notifications.sendNotification({ userId: user.id, title, message, priority, briefingId })
   state.notificationCount += 1
 
   if (notification.pushStatus === `sent`) {
@@ -420,7 +434,7 @@ const notifyUser = async function ({ argumentsText, briefingId, state }) {
 }
 
 // Runs one tool call and returns what the model is told about it
-const runBriefingTool = async function ({ call, briefingId, briefingTools, callCounts, state, isLastRound, signal }) {
+const runBriefingTool = async function ({ call, user, briefingId, briefingTools, callCounts, state, isLastRound, signal }) {
   const name = call.function.name
   const argumentsText = call.function.arguments
   const callCount = (callCounts[name] ?? 0) + 1
@@ -436,11 +450,11 @@ const runBriefingTool = async function ({ call, briefingId, briefingTools, callC
   }
 
   if (name === `notify_user`) {
-    return notifyUser({ argumentsText, briefingId, state })
+    return notifyUser({ argumentsText, user, briefingId, state })
   }
 
   // A memory tool, or a name the model made up, which runTool answers as turned off
-  const result = await tools.runTool({ name, argumentsText, chatTools: briefingTools, chatId: null, briefingId, signal })
+  const result = await tools.runTool({ name, argumentsText, chatTools: briefingTools, user, chatId: null, briefingId, signal })
 
   return result.content
 }
@@ -450,14 +464,14 @@ const runBriefingTool = async function ({ call, briefingId, briefingTools, callC
 // as rook's own events, the same as a chat's (see runConversation in routes/chat/send.js). Each
 // reply and tool call is added to `state.transcript` as it finishes, in the chat page's own form,
 // so a briefing that fails part way keeps what it did.
-const runBriefing = async function ({ briefingId, run, state, signal }) {
-  const model = settings.get(`chatModel`)
+const runBriefing = async function ({ briefingId, user, run, state, signal }) {
+  const model = config.models.chat
 
   if (model == null) {
-    throw new Error(`Choose a chat model in Settings first.`)
+    throw new Error(`Name a chat model in config.js first.`)
   }
 
-  const chatTools = tools.getChatTools()
+  const chatTools = tools.getChatTools(user)
   const briefingTools = {}
 
   for (const name of briefingToolNames) {
@@ -468,8 +482,8 @@ const runBriefing = async function ({ briefingId, run, state, signal }) {
 
   const definitions = [...tools.getToolDefinitions(briefingTools), notifyUserTool]
 
-  const context = await buildContext(signal)
-  const messages = [buildSystemMessage(), { role: `user`, content: context }]
+  const context = await buildContext(user, signal)
+  const messages = [buildSystemMessage(user), { role: `user`, content: context }]
 
   // How many times the model has called each tool in this briefing, by name
   const callCounts = {}
@@ -521,7 +535,7 @@ const runBriefing = async function ({ briefingId, run, state, signal }) {
 
       sendEvent({ type: `toolCall`, toolCallId: call.id, name, ...details })
 
-      const result = await runBriefingTool({ call, briefingId, briefingTools, callCounts, state, isLastRound, signal })
+      const result = await runBriefingTool({ call, user, briefingId, briefingTools, callCounts, state, isLastRound, signal })
 
       sendEvent({ type: `toolResult`, toolCallId: call.id, content: result, imageId: null })
 
@@ -547,7 +561,7 @@ const executeBriefing = async function (briefing) {
   let error = null
 
   try {
-    const reply = await runBriefing({ briefingId: briefing.id, run: briefing.run, state, signal })
+    const reply = await runBriefing({ briefingId: briefing.id, user: briefing.user, run: briefing.run, state, signal })
 
     if (reply !== ``) {
       overview = reply
@@ -568,50 +582,54 @@ const executeBriefing = async function (briefing) {
   try {
     const transcript = JSON.stringify(state.transcript)
     finishBriefingRow.run({ id: briefing.id, status, overview, error, transcript, now: new Date().toISOString() })
-    deleteOldBriefings.run({ keep: keptBriefings })
+    deleteOldBriefings.run({ userId: briefing.user.id, keep: keptBriefings })
   } catch (err) {
     console.error(`Saving the briefing failed`, err)
   } finally {
     // Not running any more by the time its watchers' streams end, so the page they reload to
     // shows it finished
-    current = null
+    if (running.get(briefing.user.id) === briefing) {
+      running.delete(briefing.user.id)
+    }
+
     runs.finishRun(briefing.run)
   }
 }
 
-// Starts a briefing in the background and returns its id. `startedBy` is `schedule` or `manual`.
-// Only one runs at a time; while one is running, its id is returned instead.
-export const startBriefing = function ({ startedBy }) {
+// Starts a briefing for `user` in the background and returns its id. `startedBy` is `schedule`
+// or `manual`. A user has one briefing at a time; while theirs is running, its id is returned
+// instead.
+export const startBriefing = function ({ user, startedBy }) {
+  const current = running.get(user.id)
+
   if (current != null) {
     return current.id
   }
 
   const id = cuid()
 
-  insertBriefing.run({ id, startedBy, now: new Date().toISOString() })
+  insertBriefing.run({ id, userId: user.id, startedBy, now: new Date().toISOString() })
 
   // Not kept with the chats' runs, so scheduled briefings still only wait for chats
   const run = runs.newRun()
 
-  current = { id, abort: run.abort, run, finished: null }
-  current.finished = executeBriefing(current)
+  const briefing = { id, user, abort: run.abort, run, finished: null }
+
+  running.set(user.id, briefing)
+  briefing.finished = executeBriefing(briefing)
 
   return id
 }
 
-// The running briefing's run, for the Briefing page to watch, or null
-export const getRun = function () {
-  if (current == null) {
-    return null
-  }
-
-  return current.run
+// The run of the user's briefing in progress, for the Briefing page to watch, or null
+export const getRun = function (userId) {
+  return running.get(userId)?.run ?? null
 }
 
-// Stops the running briefing, if there is one, and waits until it's saved. It's saved as failed,
-// keeping what it did before then: its transcript, and the notifications it sent.
-export const cancelBriefing = async function () {
-  const briefing = current
+// Stops the user's running briefing, if there is one, and waits until it's saved. It's saved as
+// failed, keeping what it did before then: its transcript, and the notifications it sent.
+export const cancelBriefing = async function (userId) {
+  const briefing = running.get(userId)
 
   if (briefing == null) {
     return
@@ -621,26 +639,26 @@ export const cancelBriefing = async function () {
   await briefing.finished
 }
 
-export const isRunning = function () {
-  return current != null
+export const isRunning = function (userId) {
+  return running.has(userId)
 }
 
 export const isScheduleOn = function () {
-  return settings.get(`briefingOn`) === true
+  return config.briefings.on === true
 }
 
 export const getBriefingMinutes = function () {
-  return settings.get(`briefingMinutes`) ?? defaultBriefingMinutes
+  return config.briefings.minutes ?? defaultBriefingMinutes
 }
 
-// When the next scheduled briefing is due: briefingMinutes after the last one started, or now
-// when there's never been one. Null while scheduled briefings are off.
-export const getNextDue = function () {
+// When the user's next scheduled briefing is due: briefingMinutes after their last one started,
+// or now when they've never had one. Null while scheduled briefings are off.
+export const getNextDue = function (userId) {
   if (isScheduleOn() === false) {
     return null
   }
 
-  const last = selectLastStarted.get()
+  const last = selectLastStarted.get({ userId })
 
   if (last == null) {
     return new Date()
@@ -652,25 +670,34 @@ export const getNextDue = function () {
   return new Date(lastStart + interval)
 }
 
-// Called every minute (see services/cron.js). Starts a scheduled briefing when one is due,
-// but not while one is already running or a chat is replying, so it doesn't compete with the
-// user for the model; it's tried again next time.
+// Called every minute (see services/cron.js). Starts a scheduled briefing for the user whose is
+// most overdue, when one is: one at a time, and not while any briefing is running or a chat is
+// replying, so it doesn't compete with anyone for the model; it's tried again next time.
 export const runIfDue = function () {
-  const nextDue = getNextDue()
-
-  if (nextDue == null || current != null) {
+  if (isScheduleOn() === false || running.size > 0 || runs.hasActiveRuns()) {
     return
   }
 
-  if (settings.get(`chatModel`) == null || runs.hasActiveRuns()) {
+  const now = Date.now()
+  let mostOverdue = null
+
+  for (const user of users.listUsers()) {
+    const nextDue = getNextDue(user.id)
+
+    if (nextDue.getTime() > now) {
+      continue
+    }
+
+    if (mostOverdue == null || nextDue < mostOverdue.nextDue) {
+      mostOverdue = { user, nextDue }
+    }
+  }
+
+  if (mostOverdue == null) {
     return
   }
 
-  if (Date.now() < nextDue.getTime()) {
-    return
-  }
-
-  startBriefing({ startedBy: `schedule` })
+  startBriefing({ user: mostOverdue.user, startedBy: `schedule` })
 }
 
 // The transcript comes back parsed
@@ -678,9 +705,9 @@ const toBriefing = function (row) {
   return { ...row, transcript: JSON.parse(row.transcript) }
 }
 
-// A briefing by id, or null
-export const getBriefing = function (id) {
-  const row = selectBriefing.get({ id })
+// The user's briefing with that id, or null: another user's reads as none
+export const getBriefing = function (userId, id) {
+  const row = selectBriefing.get({ userId, id })
 
   if (row == null) {
     return null
@@ -689,9 +716,9 @@ export const getBriefing = function (id) {
   return toBriefing(row)
 }
 
-// The most recent briefing that has finished (done or failed), or null
-export const getLatest = function () {
-  const rows = selectFinished.all({ limit: 1, offset: 0 })
+// The user's most recent briefing that has finished (done or failed), or null
+export const getLatest = function (userId) {
+  const rows = selectFinished.all({ userId, limit: 1, offset: 0 })
 
   if (rows.length === 0) {
     return null
@@ -700,27 +727,27 @@ export const getLatest = function () {
   return toBriefing(rows[0])
 }
 
-// The finished briefings before the latest one, most recent first
-export const listEarlier = function (limit) {
-  const rows = selectFinished.all({ limit, offset: 1 })
+// The user's finished briefings before the latest one, most recent first
+export const listEarlier = function (userId, limit) {
+  const rows = selectFinished.all({ userId, limit, offset: 1 })
   return rows.map(toBriefing)
 }
 
 // Called when the Briefing page is shown, so its nav item stops saying there's something new
-export const markViewed = function () {
-  settings.set(`briefingViewedAt`, new Date().toISOString())
+export const markViewed = function (userId) {
+  settings.set(userId, `briefingViewedAt`, new Date().toISOString())
 }
 
-// Whether a briefing has finished (done or failed) since the Briefing page was last shown, for
-// the dot on its nav item
-export const hasUnseen = function () {
-  const row = selectLastFinishedAt.get()
+// Whether a briefing of the user's has finished (done or failed) since they last saw the
+// Briefing page, for the dot on its nav item
+export const hasUnseen = function (userId) {
+  const row = selectLastFinishedAt.get({ userId })
 
   if (row.finishedAt == null) {
     return false
   }
 
-  const viewedAt = settings.get(`briefingViewedAt`)
+  const viewedAt = settings.get(userId, `briefingViewedAt`)
 
   if (viewedAt == null) {
     return true

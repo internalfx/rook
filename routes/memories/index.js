@@ -10,6 +10,7 @@ const searchTimeout = 1000 * 60 * 2
 // The memories, pinned and searchable. With ?q=, the memories closest in meaning to it instead,
 // pinned ones too, found with the embedding model as the chat model finds them.
 export const GET = async function (ctx) {
+  const userId = ctx.state.user.id
   const q = typeof ctx.query.q === `string` ? ctx.query.q.trim() : ``
 
   let results = null
@@ -19,10 +20,10 @@ export const GET = async function (ctx) {
     const model = tools.getEmbeddingModel()
 
     if (model == null) {
-      searchError = `Searching by meaning needs an embedding model; choose one in Settings.`
+      searchError = `Searching by meaning needs an embedding model; name one in config.js.`
     } else {
       try {
-        results = await memories.searchAll({ query: q, model, limit: searchLimit, signal: AbortSignal.timeout(searchTimeout) })
+        results = await memories.searchAll({ userId, query: q, model, limit: searchLimit, signal: AbortSignal.timeout(searchTimeout) })
       } catch (err) {
         console.error(err)
         searchError = `Couldn't search: ${err.message}`
@@ -30,7 +31,7 @@ export const GET = async function (ctx) {
     }
   }
 
-  const allMemories = memories.listMemories()
+  const allMemories = memories.listMemories(userId)
 
   const pinned = allMemories.filter(function (memory) {
     return memory.pinned === true
@@ -69,7 +70,7 @@ export const POST = async function (ctx) {
     return ctx.redirect(`/memories`)
   }
 
-  memories.createMemory({ content: args.content, pinned: args.pinned === true, chatId: null })
+  memories.createMemory({ userId: ctx.state.user.id, content: args.content, pinned: args.pinned === true, chatId: null })
 
   ctx.addFlash(`Memory saved.`, `success`)
   return ctx.redirect(`/memories`)

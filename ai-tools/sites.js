@@ -1,4 +1,4 @@
-// The sites read_web_page may read are a list of domains in Settings ("webDomains"), shared by
+// The sites read_web_page may read are a list of domains in config.js (tools.webDomains), shared by
 // every chat. A page is allowed when its host is a listed domain or a subdomain of one.
 //
 // Some sites read better with a few extras, applied whenever a listed domain has an entry here:
@@ -68,7 +68,7 @@ export const extrasFor = function (domain) {
   return siteExtras[domain] ?? {}
 }
 
-// The Settings text box, one site per line => { domains, invalid }. Lines may be full URLs or
+// Sites, one per line (or one per list entry) => { domains, invalid }. Lines may be full URLs or
 // start with "www."; either way only the domain is kept. `invalid` lists lines that aren't sites.
 export const parseDomains = function (text) {
   const domains = []

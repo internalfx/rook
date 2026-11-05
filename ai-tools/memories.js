@@ -1,4 +1,4 @@
-import settings from '../services/settings.js'
+import config from '../configure.js'
 import memories from '../services/memories.js'
 import { parseArguments, readSearchQuery } from './arguments.js'
 import prompts from '../prompts.js'
@@ -7,14 +7,14 @@ import prompts from '../prompts.js'
 // the user (see services/memories.js). Pinned memories are given to it at the start of every chat
 // (buildMemoriesMessage); the rest it searches for by meaning.
 
-// The model memories are searched with; they can't be searched without one
+// The model memories are searched with, from config.js; they can't be searched without one
 export const getEmbeddingModel = function () {
-  return settings.get(`embeddingModel`)
+  return config.models?.embedding ?? null
 }
 
-// Off until switched on in Settings, which needs an embedding model chosen
+// Off until switched on in config.js, which needs an embedding model there too
 export const isMemoriesOn = function () {
-  return settings.get(`memoriesOn`) === true && getEmbeddingModel() != null
+  return config.tools?.memories === true && getEmbeddingModel() != null
 }
 
 // The descriptions are in prompts.js
@@ -100,14 +100,14 @@ const deleteMemoryTool = {
   },
 }
 
-// The system message that starts every chat while memories are on: the pinned memories, with
-// their ids so the model can change them. Null when there's nothing to send.
-export const buildMemoriesMessage = function () {
+// The system message that starts every chat of the user's while memories are on: their pinned
+// memories, with their ids so the model can change them. Null when there's nothing to send.
+export const buildMemoriesMessage = function (userId) {
   if (isMemoriesOn() === false) {
     return null
   }
 
-  const pinned = memories.listPinned()
+  const pinned = memories.listPinned(userId)
 
   if (pinned.length === 0) {
     return null
@@ -126,7 +126,7 @@ const describeKind = function (pinned) {
   return pinned ? `pinned: given to you in every chat` : `searchable`
 }
 
-const runSaveMemory = function ({ argumentsText, chatId }) {
+const runSaveMemory = function ({ argumentsText, user, chatId }) {
   const args = parseArguments(argumentsText) ?? {}
   const content = typeof args.content === `string` ? args.content.trim() : ``
 
@@ -134,19 +134,19 @@ const runSaveMemory = function ({ argumentsText, chatId }) {
     return { content: `Saving the memory failed: no content was given.`, imageId: null }
   }
 
-  const memory = memories.createMemory({ content, pinned: args.pinned === true, chatId })
+  const memory = memories.createMemory({ userId: user.id, content, pinned: args.pinned === true, chatId })
 
   return { content: `Saved memory [${memory.id}] (${describeKind(memory.pinned)}).`, imageId: null }
 }
 
-const runSearchMemories = async function ({ argumentsText, toolSettings, signal }) {
+const runSearchMemories = async function ({ argumentsText, toolSettings, user, signal }) {
   const query = readSearchQuery(argumentsText)
 
   if (query == null || query.trim() === ``) {
     return { content: `The search failed: no query was given.`, imageId: null }
   }
 
-  const results = await memories.search({ query: query.trim(), model: toolSettings.embeddingModel, signal })
+  const results = await memories.search({ userId: user.id, query: query.trim(), model: toolSettings.embeddingModel, signal })
 
   if (results.length === 0) {
     return { content: `There are no searchable memories saved yet.`, imageId: null }
@@ -162,9 +162,9 @@ const runSearchMemories = async function ({ argumentsText, toolSettings, signal 
   }
 }
 
-const runUpdateMemory = function ({ argumentsText }) {
+const runUpdateMemory = function ({ argumentsText, user }) {
   const args = parseArguments(argumentsText) ?? {}
-  const memory = typeof args.id === `string` ? memories.getMemory(args.id.trim()) : null
+  const memory = typeof args.id === `string` ? memories.getMemory(user.id, args.id.trim()) : null
 
   if (memory == null) {
     return { content: `There's no memory with the id "${args.id}".`, imageId: null }
@@ -182,20 +182,20 @@ const runUpdateMemory = function ({ argumentsText }) {
     pinned = args.pinned
   }
 
-  const updated = memories.updateMemory(memory.id, { content, pinned })
+  const updated = memories.updateMemory(user.id, memory.id, { content, pinned })
 
   return { content: `Updated memory [${updated.id}] (${describeKind(updated.pinned)}): ${updated.content}`, imageId: null }
 }
 
-const runDeleteMemory = function ({ argumentsText }) {
+const runDeleteMemory = function ({ argumentsText, user }) {
   const args = parseArguments(argumentsText) ?? {}
-  const memory = typeof args.id === `string` ? memories.getMemory(args.id.trim()) : null
+  const memory = typeof args.id === `string` ? memories.getMemory(user.id, args.id.trim()) : null
 
   if (memory == null) {
     return { content: `There's no memory with the id "${args.id}".`, imageId: null }
   }
 
-  memories.deleteMemory(memory.id)
+  memories.deleteMemory(user.id, memory.id)
 
   return { content: `Deleted memory [${memory.id}]: ${memory.content}`, imageId: null }
 }

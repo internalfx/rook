@@ -127,354 +127,186 @@
 {% endblock %}
 
 {% block body %}
-  {# One choice per model: its name, labels, size and context length #}
-  {% macro modelOption(name, model, current, required=true) %}
-    <label class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
-      <input type="radio" name="{{ name }}" value="{{ model.id }}" class="mt-0.5 text-sky-600 focus:ring-sky-500"
-        {% if model.id == current %}checked{% endif %} {% if required %}required{% endif %}>
-      <span class="flex-1 min-w-0">
-        <span class="block text-sm font-medium break-words">{{ model.id }}</span>
-        <span class="mt-1 flex flex-wrap items-center gap-1 text-xs text-gray-500">
-          {% for label in model.labels %}
-            <span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{{ label }}</span>
-          {% endfor %}
-          {% if model.sizeGB != null %}<span class="ml-1">{{ model.sizeGB }} GB</span>{% endif %}
-          {% if model.contextLength %}<span class="ml-1">· {{ model.contextLength }} context</span>{% endif %}
-        </span>
-      </span>
-    </label>
-  {% endmacro %}
-
-  {# An on/off switch: a checkbox, sent as "true" when on and left out of the form when off.
-     `xModel` names an Alpine variable to keep in step with it, for parts that dim when it's off. #}
-  {% macro toggleSwitch(name, label, on, xModel) %}
-    <label class="relative inline-flex shrink-0 items-center cursor-pointer">
-      <input type="checkbox" name="{{ name }}" value="true" class="peer sr-only"
-        {% if xModel %}x-model="{{ xModel }}"{% endif %} {% if on %}checked{% endif %}>
-      <span class="sr-only">{{ label }}</span>
-      <span class="h-6 w-11 rounded-full bg-gray-300 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500 peer-focus-visible:ring-offset-2" aria-hidden="true"></span>
-      <span class="absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" aria-hidden="true"></span>
-    </label>
-  {% endmacro %}
-
   <div class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8">
     <h1 class="text-2xl font-bold">Settings</h1>
-    <p class="mt-1 mb-6 text-sm text-gray-500">Changes apply to every chat right away, including chats already open, from their next message.</p>
+    <p class="mt-1 mb-6 text-sm text-gray-500">Yours alone. The models, tools and briefing schedule are set for everyone in config.js.</p>
 
-    {% if modelsError %}
-      <div class="max-w-3xl xl:max-w-6xl p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
-        Couldn't load models: {{ modelsError }}
-      </div>
-    {% else %}
-      <form id="settings-form" method="post" action="/settings" class="grid gap-6 max-w-3xl xl:max-w-6xl xl:grid-cols-2 xl:items-start"
-        x-data="settingsForm" @input="checkDirty()" @change="checkDirty()" @submit="isLeaving = true">
-        {# Set by the leave dialog's Save, so saving goes on to where the link was going #}
-        <input type="hidden" name="returnTo" x-ref="returnTo">
+    <form id="settings-form" method="post" action="/settings" class="space-y-6 max-w-3xl"
+      x-data="settingsForm" @input="checkDirty()" @change="checkDirty()" @submit="isLeaving = true">
+      {# Set by the leave dialog's Save, so saving goes on to where the link was going #}
+      <input type="hidden" name="returnTo" x-ref="returnTo">
 
-        {# On wide screens, two columns: the models on the left, what the assistant can do and when on the right #}
-        <div class="space-y-6">
-          <fieldset class="bg-white rounded-lg shadow-sm">
-            <div class="px-4 py-3 border-b border-gray-200">
-              <legend class="font-bold">Chat model</legend>
-              <p class="mt-0.5 text-xs text-gray-500">Used for every chat, and for writing chat titles.</p>
-            </div>
-
-            {% if chatModels.length == 0 %}
-              <p class="p-4 text-sm text-gray-500">The Lemonade server has no chat models.</p>
-            {% else %}
-              {% if chatModel and not isChatModelListed %}
-                <div class="m-4 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
-                  The current model, "{{ chatModel }}", isn't on the Lemonade server any more. Choose another one.
-                </div>
-              {% endif %}
-
-              <div class="divide-y divide-gray-100">
-                {% for model in chatModels %}
-                  {{ modelOption('chatModel', model, chatModel) }}
-                {% endfor %}
-              </div>
-            {% endif %}
-          </fieldset>
-
-          <fieldset class="bg-white rounded-lg shadow-sm">
-            <div class="px-4 py-3 border-b border-gray-200">
-              <legend class="font-bold">Image model</legend>
-              <p class="mt-0.5 text-xs text-gray-500">Lets the chat model create images when you ask for them. Choose Off to turn image generation off.</p>
-            </div>
-
-            {% if imageModel and not isImageModelListed %}
-              <div class="m-4 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
-                The current model, "{{ imageModel }}", isn't on the Lemonade server any more. Choose another one, or Off.
-              </div>
-            {% endif %}
-
-            <div class="divide-y divide-gray-100">
-              <label class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
-                <input type="radio" name="imageModel" value="{{ noImageModel }}" class="mt-0.5 text-sky-600 focus:ring-sky-500"
-                  {% if not imageModel %}checked{% endif %} required>
-                <span class="text-sm font-medium">Off</span>
-              </label>
-
-              {% for model in imageModels %}
-                {{ modelOption('imageModel', model, imageModel) }}
-              {% endfor %}
-            </div>
-          </fieldset>
-
-          <fieldset class="bg-white rounded-lg shadow-sm">
-            <div class="px-4 py-3 border-b border-gray-200">
-              <legend class="font-bold">Image size</legend>
-              <p class="mt-0.5 text-xs text-gray-500">Larger images take longer, and Qwen-Image can take several minutes at Large.</p>
-            </div>
-
-            <div class="divide-y divide-gray-100">
-              {% for option in imageSizeOptions %}
-                <label class="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
-                  <input type="radio" name="imageSize" value="{{ option.value }}" class="text-sky-600 focus:ring-sky-500"
-                    {% if option.value == imageSize %}checked{% endif %} required>
-                  <span class="text-sm font-medium">{{ option.name }}</span>
-                  <span class="text-xs text-gray-500">{{ option.dimensions }}</span>
-                </label>
-              {% endfor %}
-            </div>
-          </fieldset>
-
-          {# Switched off, the embedding model stays chosen for next time #}
-          <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ memoriesOn: {{ 'true' if isMemoriesSwitchOn else 'false' }} }">
-            <div class="flex items-start gap-4 px-4 py-3 border-b border-gray-200">
-              <div class="flex-1 min-w-0">
-                <legend class="font-bold">Memories</legend>
-                <p class="mt-0.5 text-xs text-gray-500">Lets the chat model save, search, change and delete <a href="/memories" class="underline hover:text-gray-800">memories</a>. Pinned memories are sent at the start of every chat; the rest are found by meaning with the embedding model below.</p>
-              </div>
-
-              {{ toggleSwitch('memoriesOn', 'Use memories', isMemoriesSwitchOn, 'memoriesOn') }}
-            </div>
-
-            <div class="transition-opacity" :class="{ 'opacity-50': !memoriesOn }">
-              <p class="px-4 pt-3 text-sm font-medium">Embedding model</p>
-              <p class="px-4 mt-0.5 text-xs text-gray-500">Also used to search tasks by meaning.</p>
-
-              {% if embeddingModels.length == 0 %}
-                <p class="px-4 py-3 text-sm text-gray-500">The Lemonade server has no embedding models.</p>
-              {% else %}
-                {% if embeddingModel and not isEmbeddingModelListed %}
-                  <div class="m-4 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
-                    The current model, "{{ embeddingModel }}", isn't on the Lemonade server any more. Choose another one.
-                  </div>
-                {% endif %}
-
-                <div class="divide-y divide-gray-100">
-                  {% for model in embeddingModels %}
-                    {{ modelOption('embeddingModel', model, embeddingModel, false) }}
-                  {% endfor %}
-                </div>
-              {% endif %}
-            </div>
-          </fieldset>
+      {# Where "today", due dates and the times of notifications and briefings are worked out #}
+      <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ browserZone: Intl.DateTimeFormat().resolvedOptions().timeZone, zone: '{{ timeZone }}' }">
+        <div class="px-4 py-3 border-b border-gray-200">
+          <legend class="font-bold">Time zone</legend>
+          <p class="mt-0.5 text-xs text-gray-500">Where you are: what Rook counts as today, when a task is due, and when notifications and briefings are shown as happening. Until you choose, it's the server's, {{ serverTimeZone }}.</p>
         </div>
 
-        <div class="space-y-6">
-          {# Switched off, the sites stay listed (and are still sent with the form) for next time #}
-          <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ webPagesOn: {{ 'true' if isWebPagesOn else 'false' }} }">
-            <div class="flex items-start gap-4 px-4 py-3 border-b border-gray-200">
-              <div class="flex-1 min-w-0">
-                <legend class="font-bold">Web pages</legend>
-                <p class="mt-0.5 text-xs text-gray-500">Lets the chat model read pages on these sites when you ask about them.</p>
-              </div>
+        <div class="px-4 py-3">
+          <select id="timeZone" x-ref="timeZone" x-model="zone" name="timeZone" aria-label="Time zone"
+            class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+            {% for zone in timeZones %}
+              <option value="{{ zone }}" {% if zone == timeZone %}selected{% endif %}>{{ zone }}</option>
+            {% endfor %}
+          </select>
 
-              {{ toggleSwitch('webPagesOn', 'Read web pages', isWebPagesOn, 'webPagesOn') }}
-            </div>
+          {# Offered when the browser is somewhere else; choosing it counts as a change to save, so
+             the form is told once the select has it #}
+          <p x-cloak x-show="browserZone !== zone" class="mt-2 text-xs text-gray-500">
+            This browser is in <span x-text="browserZone"></span>.
+            <button type="button" class="underline hover:text-gray-800"
+              @click="zone = browserZone; $nextTick(() => $refs.timeZone.dispatchEvent(new Event('change', { bubbles: true })))">Use that</button>
+          </p>
+        </div>
+      </fieldset>
 
-            <div class="px-4 py-3 transition-opacity" :class="{ 'opacity-50': !webPagesOn }">
-              <label for="webDomains" class="block text-sm font-medium">Sites</label>
-              <p class="mt-0.5 mb-2 text-xs text-gray-500">One site per line. Each covers its subdomains too: github.com includes www.github.com. Leave it empty to turn web pages off.</p>
-              {# Grows with the list, to about 18 sites, then scrolls #}
-              <textarea id="webDomains" name="webDomains" rows="4" placeholder="github.com" spellcheck="false" autocapitalize="off"
-                x-init="$fitHeight($el)" @input="$fitHeight($el)"
-                class="w-full max-h-96 overflow-y-auto p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">{{ webDomainsText }}</textarea>
-            </div>
-
-            {# The MinerU-HTML models Lemonade has downloaded; see lemonade.isPageReaderModel #}
-            <div class="border-t border-gray-100 transition-opacity" :class="{ 'opacity-50': !webPagesOn }">
-              <p class="px-4 pt-3 text-sm font-medium">Page reader</p>
-              <p class="px-4 mt-0.5 text-xs text-gray-500">How pages are turned into Markdown for the chat model. Built in takes milliseconds and keeps the whole page. A MinerU-HTML model picks out the page's main content first, images included, in a few seconds.</p>
-
-              {% if pageReaderModel and not isPageReaderModelListed %}
-                <div class="m-4 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
-                  The current page reader, "{{ pageReaderModel }}", isn't on the Lemonade server any more, so pages are converted directly. Choose another one, or Built in.
-                </div>
-              {% endif %}
-
-              <div class="mt-1 divide-y divide-gray-100">
-                <label class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50">
-                  <input type="radio" name="pageReaderModel" value="{{ noPageReaderModel }}" class="mt-0.5 text-sky-600 focus:ring-sky-500"
-                    {% if not pageReaderModel %}checked{% endif %} required>
-                  <span class="text-sm font-medium">Built in</span>
-                </label>
-
-                {% for model in pageReaderModels %}
-                  {{ modelOption('pageReaderModel', model, pageReaderModel) }}
-                {% endfor %}
-              </div>
-
-              {% if pageReaderModels.length == 0 %}
-                <p class="px-4 pb-3 text-xs text-gray-500">No MinerU-HTML models are downloaded on the Lemonade server. Download one there and it's listed here.</p>
-              {% endif %}
-            </div>
-          </fieldset>
-
-          <fieldset class="bg-white rounded-lg shadow-sm">
-            <div class="flex items-start gap-4 px-4 py-3">
-              <div class="flex-1 min-w-0">
-                <legend class="font-bold">Web search</legend>
-                <p class="mt-0.5 text-xs text-gray-500">Lets the chat model search the web with DuckDuckGo, so the searches it makes for your questions are sent there. It can only open results on the sites listed under Web pages; for the rest it gets their titles and snippets.</p>
-              </div>
-
-              {{ toggleSwitch('webSearchOn', 'Search the web', isWebSearchOn) }}
-            </div>
-          </fieldset>
-
-          <fieldset class="bg-white rounded-lg shadow-sm">
-            <div class="flex items-start gap-4 px-4 py-3">
-              <div class="flex-1 min-w-0">
-                <legend class="font-bold">Tasks</legend>
-                <p class="mt-0.5 text-xs text-gray-500">Lets the chat model add, find, change and complete your <a href="/tasks" class="underline hover:text-gray-800">tasks</a>. It can't delete them; only you can, on the Tasks page.</p>
-              </div>
-
-              {{ toggleSwitch('tasksOn', 'Use tasks', isTasksOn) }}
-            </div>
-          </fieldset>
-
-          {# Only the conversations ticked here are read. The filter box has no name, so it isn't sent
-             with the form or counted as a change. #}
-          <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ filter: '' }">
-            <div class="px-4 py-3 border-b border-gray-200">
-              <legend class="font-bold">Slack</legend>
-              <p class="mt-0.5 text-xs text-gray-500">Lets the chat model and briefings read the Slack conversations you tick here, and only those. Nothing is ever posted to Slack.</p>
-            </div>
-
-            {% if not isSlackConfigured %}
-              <p class="px-4 py-3 text-sm text-gray-500">Add a Slack user token to config.js as <code class="font-mono">slack.oauthToken</code> to let Rook read Slack.</p>
-            {% elif slackError %}
-              <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
-                Couldn't read Slack: {{ slackError }}
-              </div>
-              {% if slackPicks.length > 0 %}
-                <p class="px-4 pb-3 text-sm text-gray-700">
-                  Reading:
-                  {% for conversation in slackPicks %}{{ conversation.label }}{% if not loop.last %}, {% endif %}{% endfor %}
-                </p>
-              {% endif %}
-            {% else %}
-              <input type="hidden" name="slackShown" value="true">
-
-              <div class="px-4 pt-3">
-                <input type="search" x-model="filter" placeholder="Filter" aria-label="Filter Slack conversations" @keydown.enter.prevent
-                  spellcheck="false" autocapitalize="off" autocomplete="off"
-                  class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
-              </div>
-
-              <div class="max-h-96 overflow-y-auto py-2">
-                {% for group in slackGroups %}
-                  {% if group.conversations.length > 0 %}
-                    <p class="px-4 pt-2 pb-1 text-xs font-medium text-gray-500">{{ group.title }}</p>
-
-                    {% for conversation in group.conversations %}
-                      <label class="flex items-center gap-3 px-4 py-1.5 cursor-pointer hover:bg-gray-50" data-label="{{ conversation.label }}"
-                        x-show="filter === '' || $el.dataset.label.toLowerCase().includes(filter.toLowerCase())">
-                        <input type="checkbox" name="slackChannels" value="{{ conversation.id }}" class="size-4 shrink-0 accent-sky-600"
-                          {% if conversation.picked %}checked{% endif %}>
-                        <span class="min-w-0 text-sm break-words">{{ conversation.label }}</span>
-                        {% if conversation.kind == 'private' %}<span class="text-xs text-gray-500">private</span>{% endif %}
-                      </label>
-                    {% endfor %}
-                  {% endif %}
-                {% endfor %}
-              </div>
-            {% endif %}
-          </fieldset>
-
-          {# Switched off, the interval is kept for next time #}
-          <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ briefingOn: {{ 'true' if isBriefingOn else 'false' }} }">
-            <div class="flex items-start gap-4 px-4 py-3 border-b border-gray-200">
-              <div class="flex-1 min-w-0">
-                <legend class="font-bold">Briefing</legend>
-                <p class="mt-0.5 text-xs text-gray-500">Runs the chat model on a schedule to look over your memories, tasks and recent chats, keep the memories and tasks up to date, and write you a short update on the <a href="/briefing" class="underline hover:text-gray-800">Briefing</a> page. You can also ask for one there at any time.</p>
-              </div>
-
-              {{ toggleSwitch('briefingOn', 'Scheduled briefings', isBriefingOn, 'briefingOn') }}
-            </div>
-
-            <div class="px-4 py-3 transition-opacity" :class="{ 'opacity-50': !briefingOn }">
-              <label class="flex items-center gap-2 text-sm">
-                Every
-                <input type="number" name="briefingMinutes" value="{{ briefingMinutes }}" min="1" max="1440" step="1" required
-                  class="w-24 p-1.5 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
-                minutes
-              </label>
-              <p class="mt-1 text-xs text-gray-500">Counted from when the last briefing started; up to 1440 (a day). A scheduled briefing waits while a chat is replying, so it doesn't slow you down.</p>
-            </div>
-          </fieldset>
-
-          <fieldset class="bg-white rounded-lg shadow-sm" x-data="ntfyTest">
-            <div class="px-4 py-3 border-b border-gray-200">
-              <legend class="font-bold">Notifications</legend>
-              <p class="mt-0.5 text-xs text-gray-500">Briefings can notify you of something important. Notifications always show on the Notifications page; with an <a href="https://ntfy.sh" target="_blank" rel="noopener" class="underline hover:text-gray-800">ntfy</a> topic here, they're pushed to your phone too. Subscribe to the same topic in the ntfy app.</p>
-            </div>
-
-            <div class="px-4 py-3 space-y-3">
-              <div>
-                <label for="ntfyUrl" class="block text-sm font-medium">ntfy topic URL</label>
-                <p class="mt-0.5 mb-1 text-xs text-gray-500">Anyone who knows a topic on ntfy.sh can read it, so pick one that's hard to guess. Leave it empty to keep notifications in rook only.</p>
-                <input id="ntfyUrl" x-ref="ntfyUrl" type="url" name="ntfyUrl" value="{{ ntfyUrl or '' }}" placeholder="https://ntfy.sh/your-secret-topic"
-                  spellcheck="false" autocapitalize="off" autocomplete="off"
-                  class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
-              </div>
-
-              <div>
-                <label for="ntfyToken" class="block text-sm font-medium">Access token <span class="font-normal text-gray-500">(optional)</span></label>
-                <p class="mt-0.5 mb-1 text-xs text-gray-500">For a topic that needs logging in to, on your own ntfy server or an ntfy.sh account.</p>
-                <input id="ntfyToken" x-ref="ntfyToken" type="password" name="ntfyToken" value="{{ ntfyToken or '' }}"
-                  spellcheck="false" autocapitalize="off" autocomplete="off"
-                  class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
-              </div>
-
-              <div class="flex flex-wrap items-center gap-3">
-                <button type="button" class="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
-                  :disabled="isSending" @click="send()">
-                  <span class="inline-block size-4 bg-current" :class="isSending ? 'icon-loading' : 'icon-bell'" aria-hidden="true"></span>
-                  Send a test
-                </button>
-                <p x-cloak x-show="result" class="text-sm" :class="isOk ? 'text-green-700' : 'text-red-700'" role="status" x-text="result"></p>
-              </div>
-            </div>
-          </fieldset>
+      {# Only the conversations ticked here are read. The filter box has no name, so it isn't sent
+         with the form or counted as a change. #}
+      <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ filter: '' }">
+        <div class="px-4 py-3 border-b border-gray-200">
+          <legend class="font-bold">Slack</legend>
+          <p class="mt-0.5 text-xs text-gray-500">Lets the chat model and briefings read the Slack conversations you tick here, and only those, as you. Nothing is ever posted to Slack.</p>
         </div>
 
-        {# Inside the form, so its buttons are plain buttons: a <form method="dialog"> can't go in another form.
-           A click on the backdrop lands on the dialog itself, so it cancels. #}
-        <dialog x-ref="leaveDialog" class="m-auto w-[calc(100%-2rem)] max-w-md p-0 rounded-lg shadow-xl backdrop:bg-black/30"
-          aria-labelledby="leave-dialog-title" @click.self="$el.close()">
-          <div class="p-5">
-            <h2 id="leave-dialog-title" class="text-base font-bold">Save your changes?</h2>
-            <p class="mt-2 text-sm text-gray-600">You have changes to Settings that haven't been saved.</p>
+        <div class="px-4 py-3 border-b border-gray-100">
+          <label for="slackToken" class="block text-sm font-medium">Your Slack user token</label>
+          <p class="mt-0.5 mb-1 text-xs text-gray-500">A user token (it starts with xoxp-) from a Slack app installed to your workspace. Rook reads Slack as you with it, so it sees what you see. Leave it empty to keep Rook out of Slack; the conversations you ticked are kept for when you add one again.</p>
+          <input id="slackToken" type="password" name="slackToken" value="{{ slackToken or '' }}" placeholder="xoxp-…"
+            spellcheck="false" autocapitalize="off" autocomplete="off"
+            class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+        </div>
 
-            <div class="mt-5 flex flex-wrap justify-end gap-2">
-              <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="$refs.leaveDialog.close()">Cancel</button>
-              <button type="button" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50" @click="leaveWithoutSaving()">Don't save</button>
-              <button type="button" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md" @click="saveAndLeave()">Save</button>
+        {% if not isSlackConfigured %}
+          <p class="px-4 py-3 text-sm text-gray-500">Add your Slack user token above and save to choose what Rook reads.</p>
+        {% elif slackError %}
+          <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
+            Couldn't read Slack: {{ slackError }}
+          </div>
+          {% if slackPicks.length > 0 %}
+            <p class="px-4 pb-3 text-sm text-gray-700">
+              Reading:
+              {% for conversation in slackPicks %}{{ conversation.label }}{% if not loop.last %}, {% endif %}{% endfor %}
+            </p>
+          {% endif %}
+        {% else %}
+          <input type="hidden" name="slackShown" value="true">
+
+          <div class="px-4 pt-3">
+            <input type="search" x-model="filter" placeholder="Filter" aria-label="Filter Slack conversations" @keydown.enter.prevent
+              spellcheck="false" autocapitalize="off" autocomplete="off"
+              class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+          </div>
+
+          <div class="max-h-96 overflow-y-auto py-2">
+            {% for group in slackGroups %}
+              {% if group.conversations.length > 0 %}
+                <p class="px-4 pt-2 pb-1 text-xs font-medium text-gray-500">{{ group.title }}</p>
+
+                {% for conversation in group.conversations %}
+                  <label class="flex items-center gap-3 px-4 py-1.5 cursor-pointer hover:bg-gray-50" data-label="{{ conversation.label }}"
+                    x-show="filter === '' || $el.dataset.label.toLowerCase().includes(filter.toLowerCase())">
+                    <input type="checkbox" name="slackChannels" value="{{ conversation.id }}" class="size-4 shrink-0 accent-sky-600"
+                      {% if conversation.picked %}checked{% endif %}>
+                    <span class="min-w-0 text-sm break-words">{{ conversation.label }}</span>
+                    {% if conversation.kind == 'private' %}<span class="text-xs text-gray-500">private</span>{% endif %}
+                  </label>
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </fieldset>
+
+      <fieldset class="bg-white rounded-lg shadow-sm" x-data="ntfyTest">
+        <div class="px-4 py-3 border-b border-gray-200">
+          <legend class="font-bold">Notifications</legend>
+          <p class="mt-0.5 text-xs text-gray-500">Briefings can notify you of something important. Notifications always show on the Notifications page; with an <a href="https://ntfy.sh" target="_blank" rel="noopener" class="underline hover:text-gray-800">ntfy</a> topic here, they're pushed to your phone too. Subscribe to the same topic in the ntfy app.</p>
+        </div>
+
+        <div class="px-4 py-3 space-y-3">
+          <div>
+            <label for="ntfyUrl" class="block text-sm font-medium">ntfy topic URL</label>
+            <p class="mt-0.5 mb-1 text-xs text-gray-500">Anyone who knows a topic on ntfy.sh can read it, so pick one that's hard to guess. Leave it empty to keep notifications in rook only.</p>
+            <input id="ntfyUrl" x-ref="ntfyUrl" type="url" name="ntfyUrl" value="{{ ntfyUrl or '' }}" placeholder="https://ntfy.sh/your-secret-topic"
+              spellcheck="false" autocapitalize="off" autocomplete="off"
+              class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+          </div>
+
+          <div>
+            <label for="ntfyToken" class="block text-sm font-medium">Access token <span class="font-normal text-gray-500">(optional)</span></label>
+            <p class="mt-0.5 mb-1 text-xs text-gray-500">For a topic that needs logging in to, on your own ntfy server or an ntfy.sh account.</p>
+            <input id="ntfyToken" x-ref="ntfyToken" type="password" name="ntfyToken" value="{{ ntfyToken or '' }}"
+              spellcheck="false" autocapitalize="off" autocomplete="off"
+              class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3">
+            <button type="button" class="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
+              :disabled="isSending" @click="send()">
+              <span class="inline-block size-4 bg-current" :class="isSending ? 'icon-loading' : 'icon-bell'" aria-hidden="true"></span>
+              Send a test
+            </button>
+            <p x-cloak x-show="result" class="text-sm" :class="isOk ? 'text-green-700' : 'text-red-700'" role="status" x-text="result"></p>
+          </div>
+        </div>
+      </fieldset>
+
+      {# Inside the form, so its buttons are plain buttons: a <form method="dialog"> can't go in another form.
+         A click on the backdrop lands on the dialog itself, so it cancels. #}
+      <dialog x-ref="leaveDialog" class="m-auto w-[calc(100%-2rem)] max-w-md p-0 rounded-lg shadow-xl backdrop:bg-black/30"
+        aria-labelledby="leave-dialog-title" @click.self="$el.close()">
+        <div class="p-5">
+          <h2 id="leave-dialog-title" class="text-base font-bold">Save your changes?</h2>
+          <p class="mt-2 text-sm text-gray-600">You have changes to Settings that haven't been saved.</p>
+
+          <div class="mt-5 flex flex-wrap justify-end gap-2">
+            <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="$refs.leaveDialog.close()">Cancel</button>
+            <button type="button" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50" @click="leaveWithoutSaving()">Don't save</button>
+            <button type="button" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md" @click="saveAndLeave()">Save</button>
+          </div>
+        </div>
+      </dialog>
+    </form>
+
+    {# Its own form, apart from the settings, so it isn't counted among their unsaved changes #}
+    <form method="post" action="/settings/password" class="mt-6 max-w-3xl">
+      <fieldset class="bg-white rounded-lg shadow-sm">
+        <div class="px-4 py-3 border-b border-gray-200">
+          <legend class="font-bold">Password</legend>
+          <p class="mt-0.5 text-xs text-gray-500">You log in as {{ ctx.state.user.email }}. A new password needs at least 8 characters.</p>
+        </div>
+
+        <div class="px-4 py-3 space-y-3">
+          <div>
+            <label for="currentPassword" class="block text-sm font-medium">Current password</label>
+            <input id="currentPassword" type="password" name="currentPassword" required autocomplete="current-password"
+              class="mt-1 w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+          </div>
+
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label for="newPassword" class="block text-sm font-medium">New password</label>
+              <input id="newPassword" type="password" name="newPassword" required minlength="8" autocomplete="new-password"
+                class="mt-1 w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+            </div>
+
+            <div>
+              <label for="confirmPassword" class="block text-sm font-medium">New password again</label>
+              <input id="confirmPassword" type="password" name="confirmPassword" required minlength="8" autocomplete="new-password"
+                class="mt-1 w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
             </div>
           </div>
-        </dialog>
-      </form>
-    {% endif %}
+
+          <button type="submit" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50">Change password</button>
+        </div>
+      </fieldset>
+    </form>
   </div>
 
-  {% if not modelsError %}
-    <div class="shrink-0 px-4 py-3 sm:px-8 bg-white border-t border-gray-200">
-      <div class="max-w-3xl xl:max-w-6xl">
-        <button type="submit" form="settings-form" class="px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Save</button>
-      </div>
+  <div class="shrink-0 px-4 py-3 sm:px-8 bg-white border-t border-gray-200">
+    <div class="max-w-3xl">
+      <button type="submit" form="settings-form" class="px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Save</button>
     </div>
-  {% endif %}
+  </div>
 {% endblock body %}

@@ -1,17 +1,15 @@
-import config from '../configure.js'
+import users from '../services/users.js'
 
-// Rook has a single owner, defined in config.js; there is no users table
+// A page marked secure needs a logged-in user: the one whose id the session holds (see
+// routes/auth/login.js). A user deleted since they logged in counts as logged out.
 export default async function (ctx, next) {
   if (ctx.meta.secure === true) {
-    const isLoggedIn = ctx.state.session?.data?.loggedIn === true
+    const userId = ctx.state.session?.data?.userId
 
     ctx.state.user = null
 
-    if (isLoggedIn) {
-      ctx.state.user = {
-        name: config.owner.name,
-        email: config.owner.email,
-      }
+    if (userId != null) {
+      ctx.state.user = users.getUser(userId)
     }
 
     if (ctx.state.user == null) {
@@ -19,8 +17,6 @@ export default async function (ctx, next) {
       ctx.writeSession(`redirectAfterLogin`, ctx.path)
       return ctx.redirect(`/auth/login`)
     }
-
-    ctx.state.username = ctx.state.user.email
   }
 
   await next()

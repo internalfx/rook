@@ -1,10 +1,17 @@
 
+import chats from '../../services/chats.js'
 import images from '../../services/images.js'
 import { serveFile } from '../../lib/serveFile.js'
 
-// Images generated in chats, and those the user attached
+// Images generated in the user's chats, and those they attached. Another user's reads as none.
 export const GET = async function (ctx) {
-  const fileName = images.findImageFile(ctx.state.params.id)
+  const imageId = ctx.state.params.id
+
+  if (chats.ownsImage(ctx.state.user.id, imageId) === false) {
+    ctx.throw(404)
+  }
+
+  const fileName = images.findImageFile(imageId)
 
   if (fileName == null) {
     ctx.throw(404)

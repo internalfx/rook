@@ -3,10 +3,10 @@ import tasks from '../../../services/tasks.js'
 import { readReturnTo, toPageTask } from '../../../lib/taskForm.js'
 
 // The model's first message in a chat about `task`: its title, priority and due date as the
-// Tasks page words them, and its notes, then a question for the user. It has no id; to change
-// the task, the model finds it by title with find_tasks.
-const describeTaskStart = function (task) {
-  const pageTask = toPageTask(task)
+// Tasks page words them (in `zone`, the user's time zone), and its notes, then a question for
+// the user. It has no id; to change the task, the model finds it by title with find_tasks.
+const describeTaskStart = function (task, zone) {
+  const pageTask = toPageTask(task, zone)
   const parts = [`Let's talk about your task **${task.title}**.`]
   const details = []
 
@@ -46,16 +46,17 @@ const describeTaskStart = function (task) {
 // with the task, as Discuss on a briefing does. The chat is titled after the user's first
 // message, like any other.
 export const POST = async function (ctx) {
-  const task = tasks.getTask(ctx.state.params.id)
+  const userId = ctx.state.user.id
+  const task = tasks.getTask(userId, ctx.state.params.id)
 
   if (task == null) {
     ctx.addFlash(`That task no longer exists.`, `error`)
     return ctx.redirect(readReturnTo(ctx.request.body))
   }
 
-  const chat = chats.createChat()
+  const chat = chats.createChat(userId)
 
-  chats.addMessage({ chatId: chat.id, role: `assistant`, content: describeTaskStart(task) })
+  chats.addMessage({ chatId: chat.id, role: `assistant`, content: describeTaskStart(task, ctx.state.user.timeZone) })
 
   return ctx.redirect(`/chat/${chat.id}`)
 }

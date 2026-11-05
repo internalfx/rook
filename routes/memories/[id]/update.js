@@ -8,8 +8,9 @@ export const POST = async function (ctx) {
   const isMemoriesPage = returnTo === `/memories` || (typeof returnTo === `string` && returnTo.startsWith(`/memories?`))
   const destination = isMemoriesPage ? returnTo : `/memories`
 
+  const userId = ctx.state.user.id
   const memoryId = ctx.state.params.id
-  const memory = memories.getMemory(memoryId)
+  const memory = memories.getMemory(userId, memoryId)
 
   if (memory == null) {
     ctx.addFlash(`That memory no longer exists.`, `error`)
@@ -30,7 +31,7 @@ export const POST = async function (ctx) {
     return ctx.redirect(destination)
   }
 
-  memories.updateMemory(memoryId, { content: args.content, pinned: args.pinned === true })
+  memories.updateMemory(userId, memoryId, { content: args.content, pinned: args.pinned === true })
 
   ctx.addFlash(`Memory saved.`, `success`)
   return ctx.redirect(destination)

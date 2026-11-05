@@ -1,9 +1,10 @@
 
 import Bun from 'bun'
-import config from '../../configure.js'
 import joi from '../../services/joi.js'
+import users from '../../services/users.js'
 
-// Checked when no owner password is configured, so a missing passhash never lets anyone in
+// Checked when there's no user with the email given, so the time taken doesn't say which emails
+// have accounts
 const dummyHash = await Bun.password.hash(`not-a-real-password`)
 
 const verifyPassword = async function (password, passhash) {
@@ -32,21 +33,18 @@ export const POST = async function (ctx) {
     return ctx.redirect(`/auth/login`)
   }
 
-  const owner = config.owner ?? {}
-  const ownerEmail = owner.email ?? ``
-  const passhash = owner.passhash ?? dummyHash
+  const login = users.findLogin(args.email)
+  const passhash = login?.passhash ?? dummyHash
 
-  const isOwnerEmail = args.email.toLowerCase() === ownerEmail.toLowerCase()
   const isValidPassword = await verifyPassword(args.password, passhash)
 
-  if (isOwnerEmail === false || isValidPassword === false) {
+  if (login == null || isValidPassword === false) {
     ctx.addFlash(`Invalid email or password.`, `error`)
     return ctx.redirect(`/auth/login?username=${encodeURIComponent(args.email)}`)
   }
 
   ctx.regenerateSession()
-  ctx.writeSession(`loggedIn`, true)
-  ctx.writeSession(`username`, ownerEmail)
+  ctx.writeSession(`userId`, login.id)
 
   return ctx.redirect(ctx.state.session?.data?.redirectAfterLogin || `/`)
 }

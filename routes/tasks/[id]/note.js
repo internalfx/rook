@@ -5,7 +5,8 @@ import { readReturnTo } from '../../../lib/taskForm.js'
 // Form POST from a done task's note form: sets its completion note, or removes it when it's empty
 export const POST = async function (ctx) {
   const destination = readReturnTo(ctx.request.body)
-  const task = tasks.getTask(ctx.state.params.id)
+  const userId = ctx.state.user.id
+  const task = tasks.getTask(userId, ctx.state.params.id)
 
   if (task == null) {
     ctx.addFlash(`That task no longer exists.`, `error`)
@@ -30,7 +31,7 @@ export const POST = async function (ctx) {
   }
 
   // An empty note comes through as null
-  tasks.setDone(task.id, true, args.doneNote ?? ``)
+  tasks.setDone(userId, task.id, true, args.doneNote ?? ``)
 
   return ctx.redirect(destination)
 }

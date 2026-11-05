@@ -130,27 +130,28 @@ const runCalculate = function ({ argumentsText }) {
   return result
 }
 
-const runDaysBetween = function ({ argumentsText }) {
+// The date sums take the user's time zone, for what "today" is
+const runDaysBetween = function ({ argumentsText, user }) {
   const args = parseArguments(argumentsText) ?? {}
 
   return runCalculation(function () {
-    return calculator.daysBetween(args.from, args.to)
+    return calculator.daysBetween(args.from, args.to, user.timeZone)
   })
 }
 
-const runAddToDate = function ({ argumentsText }) {
+const runAddToDate = function ({ argumentsText, user }) {
   const args = parseArguments(argumentsText) ?? {}
 
   return runCalculation(function () {
-    return calculator.addToDate(args.date, args.amount, args.unit)
+    return calculator.addToDate(args.date, args.amount, args.unit, user.timeZone)
   })
 }
 
-const runFindWeekday = function ({ argumentsText }) {
+const runFindWeekday = function ({ argumentsText, user }) {
   const args = parseArguments(argumentsText) ?? {}
 
   return runCalculation(function () {
-    return calculator.findWeekday(args.weekday, args.from, args.direction)
+    return calculator.findWeekday(args.weekday, args.from, args.direction, user.timeZone)
   })
 }
 

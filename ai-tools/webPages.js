@@ -1,29 +1,29 @@
-import settings from '../services/settings.js'
+import config from '../configure.js'
 import lemonade from '../services/lemonade.js'
 import webReader from './webReader.js'
 import { extrasFor } from './sites.js'
 import { readToolUrl } from './arguments.js'
 import prompts from '../prompts.js'
 
-// read_web_page: reads a page on one of the sites listed in Settings, as Markdown (see
+// read_web_page: reads a page on one of the sites listed in config.js, as Markdown (see
 // webReader.js and sites.js)
 
-// The sites listed in Settings, for every chat, whether web pages are on or off
+// The sites listed in config.js, for every chat, whether web pages are on or off
 export const getWebDomains = function () {
-  return settings.get(`webDomains`) ?? []
+  return config.tools?.webDomains ?? []
 }
 
-// Web pages are on unless switched off in Settings. Off is saved as its own setting, so the
-// list of sites is kept for when they're switched back on.
+// Web pages are on unless switched off in config.js, where the list of sites stays for when
+// they're switched back on
 export const isWebPagesOn = function () {
-  return settings.get(`webPagesOff`) !== true
+  return config.tools?.webPages !== false
 }
 
 // The MinerU-HTML model that picks out pages' main content (see webReader.readPage), or null to
-// convert them directly. A model saved that isn't one (a page reader rook no longer uses) counts
+// convert them directly. A model named that isn't one (a page reader rook no longer uses) counts
 // as none.
 export const getPageReaderModel = function () {
-  const model = settings.get(`pageReaderModel`) ?? null
+  const model = config.models?.pageReader ?? null
   return model != null && lemonade.isPageReaderModel({ id: model }) ? model : null
 }
 
@@ -36,7 +36,7 @@ export const getReadableDomains = function () {
   return getWebDomains()
 }
 
-// read_web_page's definition names the sites it can read, as they are in Settings right now
+// read_web_page's definition names the sites it can read, as they are in config.js
 const buildReadWebPageTool = function () {
   const domains = getReadableDomains()
 
@@ -96,9 +96,9 @@ const runReadWebPage = async function ({ argumentsText, toolSettings, signal }) 
 
   const domains = getReadableDomains()
 
-  // Web pages can be switched off, or the list emptied, in Settings part way through a conversation
+  // Web pages can be switched off, or the list emptied, in config.js part way through a conversation
   if (domains.length === 0) {
-    return { content: `Reading web pages is turned off in Settings.`, imageId: null }
+    return { content: `Reading web pages is turned off in config.js.`, imageId: null }
   }
 
   const page = await webReader.readPage({ url: url.trim(), domains, readerModel: toolSettings.pageReaderModel, signal })
@@ -118,8 +118,8 @@ const runReadWebPage = async function ({ argumentsText, toolSettings, signal }) 
 export const tools = [
   {
     name: `read_web_page`,
-    // In every chat's tools, but offered only while Settings list some sites (see
-    // buildReadWebPageTool). The page reader is as Settings had it when the message started.
+    // In every chat's tools, but offered only while config.js lists some sites (see
+    // buildReadWebPageTool). The page reader is as config.js had it when the message started.
     settings: () => ({ pageReaderModel: getPageReaderModel() }),
     definition: buildReadWebPageTool,
     run: runReadWebPage,

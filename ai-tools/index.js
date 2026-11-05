@@ -10,17 +10,19 @@ import notifications from './notifications.js'
 import { readCallDetails } from './arguments.js'
 
 // Tools the chat model can call, as OpenAI-style function definitions. Every chat has the tools
-// Settings give right now, as an object keyed by tool name ("chat tools", see getChatTools):
+// config.js gives right now, as an object keyed by tool name ("chat tools", see getChatTools):
 //   { generate_image: { model: `SDXL-Turbo`, size: `512x512` }, read_web_page: {} }
 //
 // Each of time.js, math.js, images.js, webPages.js, webSearch.js, memories.js, tasks.js, slack.js
 // and notifications.js gives its tools as a list of entries:
 //   name        what the model calls it
-//   settings    () => its settings for a chat right now ({} when there's nothing to set), or
-//               null when Settings leave it out
+//   settings    (user) => its settings for the user's chat right now ({} when there's nothing to
+//               set), or null when config.js leaves it out
 //   definition  (toolSettings) => its definition for the model, or null when it can't be offered
 //               right now
-//   run         ({ argumentsText, toolSettings, chatId, briefingId, signal }) => { content, imageId }
+//   run         ({ argumentsText, toolSettings, user, chatId, briefingId, signal }) => { content, imageId }
+// `user` is whose chat or briefing it is (ctx.state.user): everything a tool reads or changes is
+// theirs alone.
 // The other files are what those need (calculator.js, webReader.js, duckduckgo.js, browser.js,
 // sites.js, arguments.js), and limits.js, how many calls the model gets.
 
@@ -41,12 +43,13 @@ const toolsByName = new Map(allTools.map(function (tool) {
   return [tool.name, tool]
 }))
 
-// The tools every chat has right now, and their settings, from Settings
-export const getChatTools = function () {
+// The tools the user's chats have right now, and their settings, from config.js and their own
+// Settings
+export const getChatTools = function (user) {
   const chatTools = {}
 
   for (const tool of allTools) {
-    const toolSettings = tool.settings()
+    const toolSettings = tool.settings(user)
 
     if (toolSettings != null) {
       chatTools[tool.name] = toolSettings
@@ -75,14 +78,14 @@ export const getToolDefinitions = function (chatTools) {
 // Runs one tool call and returns { content, imageId }. `content` is what the model is told
 // about the result. Failures are reported to the model as text rather than thrown, so it can
 // explain them to the user; a stopped call still throws, so the caller can tell it was stopped.
-// `chatId` is the chat the call was made in, or `briefingId` the briefing.
-export const runTool = async function ({ name, argumentsText, chatTools, chatId, briefingId = null, signal }) {
+// `user` is whose it is; `chatId` is the chat the call was made in, or `briefingId` the briefing.
+export const runTool = async function ({ name, argumentsText, chatTools, user, chatId, briefingId = null, signal }) {
   const toolSettings = Object.hasOwn(chatTools, name) ? chatTools[name] : null
 
   // Only these tools are offered, so this catches a model inventing a name, or calling a tool
-  // from earlier in the conversation that has since been turned off in Settings
+  // from earlier in the conversation that has since been turned off in config.js
   if (toolSettings == null) {
-    return { content: `${name} is turned off in Settings.`, imageId: null }
+    return { content: `${name} is turned off in config.js.`, imageId: null }
   }
 
   const tool = toolsByName.get(name)
@@ -92,7 +95,7 @@ export const runTool = async function ({ name, argumentsText, chatTools, chatId,
   }
 
   try {
-    const result = await tool.run({ argumentsText, toolSettings, chatId, briefingId, signal })
+    const result = await tool.run({ argumentsText, toolSettings, user, chatId, briefingId, signal })
     return result
   } catch (err) {
     if (signal.aborted === true) {

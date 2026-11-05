@@ -9,7 +9,7 @@ export const POST = async function (ctx) {
 
   const memoryId = ctx.state.params.id
 
-  memories.deleteMemory(memoryId)
+  memories.deleteMemory(ctx.state.user.id, memoryId)
 
   ctx.addFlash(`Memory deleted.`, `success`)
   return ctx.redirect(destination)

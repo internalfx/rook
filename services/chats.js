@@ -3,14 +3,17 @@ import cuid from 'cuid'
 import db from './db.js'
 import images from './images.js'
 
-const selectChats = db.query(`SELECT id, title, updatedAt FROM chats ORDER BY updatedAt DESC`)
-const selectChat = db.query(`SELECT * FROM chats WHERE id = $id`)
+// Each chat belongs to one user (userId). Its messages belong to it, so a chat is looked up with
+// its user's id (getChat), and anything about its messages takes the chat's id from there.
+
+const selectChats = db.query(`SELECT id, title, updatedAt FROM chats WHERE userId = $userId ORDER BY updatedAt DESC`)
+const selectChat = db.query(`SELECT * FROM chats WHERE id = $id AND userId = $userId`)
 const selectRecentChats = db.query(`
-  SELECT id, title, updatedAt FROM chats ORDER BY updatedAt DESC LIMIT $limit
+  SELECT id, title, updatedAt FROM chats WHERE userId = $userId ORDER BY updatedAt DESC LIMIT $limit
 `)
 const insertChat = db.query(`
-  INSERT INTO chats (id, title, createdAt, updatedAt)
-  VALUES ($id, NULL, $now, $now)
+  INSERT INTO chats (id, userId, title, createdAt, updatedAt)
+  VALUES ($id, $userId, NULL, $now, $now)
 `)
 const updateChatActivity = db.query(`UPDATE chats SET updatedAt = $now WHERE id = $id`)
 const updateChatTitle = db.query(`UPDATE chats SET title = $title WHERE id = $id`)
@@ -28,18 +31,36 @@ const selectImageIds = db.query(`
   SELECT imageId, imageIds FROM chatMessages
   WHERE chatId = $chatId AND (imageId IS NOT NULL OR imageIds IS NOT NULL)
 `)
+// Whether an image is in one of the user's chats: made by a tool there (imageId), or attached to
+// a message (imageIds, a JSON array)
+const selectOwnsImage = db.query(`
+  SELECT 1 FROM chatMessages JOIN chats ON chats.id = chatMessages.chatId
+  WHERE chats.userId = $userId AND (
+    chatMessages.imageId = $imageId OR (
+      chatMessages.imageIds IS NOT NULL
+      AND EXISTS (SELECT 1 FROM json_each(chatMessages.imageIds) WHERE value = $imageId)
+    )
+  )
+  LIMIT 1
+`)
 
-export const listChats = function () {
-  return selectChats.all()
+export const listChats = function (userId) {
+  return selectChats.all({ userId })
 }
 
-export const getChat = function (id) {
-  return selectChat.get({ id }) ?? null
+// The user's chat with that id, or null: another user's reads as no chat
+export const getChat = function (userId, id) {
+  return selectChat.get({ userId, id }) ?? null
 }
 
-// The `limit` most recently active chats, most recent first, for briefings to look over
-export const listRecentChats = function (limit) {
-  return selectRecentChats.all({ limit })
+// The user's `limit` most recently active chats, most recent first, for briefings to look over
+export const listRecentChats = function (userId, limit) {
+  return selectRecentChats.all({ userId, limit })
+}
+
+// Whether the image (see services/images.js) is in one of the user's chats
+export const ownsImage = function (userId, imageId) {
+  return selectOwnsImage.get({ userId, imageId }) != null
 }
 
 // toolCalls comes back parsed: an array in the OpenAI format, or null. So does imageIds: the ids
@@ -65,14 +86,14 @@ export const getMessages = function (chatId) {
   return messages
 }
 
-// A chat holds only its conversation; its models and tools come from Settings each time
-export const createChat = function () {
+// A chat holds only its conversation; its models and tools come from config.js each time
+export const createChat = function (userId) {
   const id = cuid()
   const now = new Date().toISOString()
 
-  insertChat.run({ id, now })
+  insertChat.run({ id, userId, now })
 
-  return getChat(id)
+  return getChat(userId, id)
 }
 
 // Moves the chat to the top of the list
@@ -113,7 +134,7 @@ export const addMessage = function ({
 }
 
 // Its messages go with it (ON DELETE CASCADE), and so do the image files: those the model made
-// and those the user attached
+// and those the user attached. The caller has checked the chat is the user's (getChat).
 export const deleteChat = function (id) {
   const imageRows = selectImageIds.all({ chatId: id })
 
@@ -131,6 +152,7 @@ export default {
   listChats,
   getChat,
   listRecentChats,
+  ownsImage,
   getMessages,
   createChat,
   touchChat,

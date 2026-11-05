@@ -1,6 +1,6 @@
 import dayjs from 'dayjs'
 import notifications from '../services/notifications.js'
-import { getOwnTimeZone, readTime, checkClockChange } from './time.js'
+import { readTime, checkClockChange } from './time.js'
 import { parseArguments } from './arguments.js'
 import prompts from '../prompts.js'
 
@@ -73,9 +73,10 @@ const cancelNotificationTool = {
   },
 }
 
-// "Wed, Nov 4, 2026, 3:00 PM", in the server's time zone, which is the owner's
-export const describeSendTime = function (iso) {
+// "Wed, Nov 4, 2026, 3:00 PM", in the user's time zone
+export const describeSendTime = function (iso, zone) {
   return new Date(iso).toLocaleString(`en-US`, {
+    timeZone: zone,
     weekday: `short`,
     month: `short`,
     day: `numeric`,
@@ -85,10 +86,10 @@ export const describeSendTime = function (iso) {
   })
 }
 
-// A scheduled notification as one line for the model, with its id, e.g.
+// A scheduled notification as one line for the model, with its id, its time in the user's zone, e.g.
 // `[ck…] Wed, Nov 4, 2026, 3:00 PM: "Leave for the dentist": It's at 3:30. (scheduled in the chat "Teeth")`
-export const describeScheduled = function (scheduled) {
-  let text = `[${scheduled.id}] ${describeSendTime(scheduled.sendAt)}: "${scheduled.title}": ${scheduled.message}`
+export const describeScheduled = function (scheduled, zone) {
+  let text = `[${scheduled.id}] ${describeSendTime(scheduled.sendAt, zone)}: "${scheduled.title}": ${scheduled.message}`
 
   if (scheduled.priority === `high`) {
     text = `${text} (high priority)`
@@ -114,9 +115,9 @@ export const describeScheduled = function (scheduled) {
 // "in 20 minutes" or "in 2 hours", which the model can give instead of working out the time
 const relativeTimePattern = /^in\s+(\d+)\s+(minutes?|mins?|hours?|hrs?)$/i
 
-// When the model asked for it to be sent: { instant, note }, `note` saying how a clock change
-// was handled, or { problem } to tell the model
-const readSendAt = function (text) {
+// When the model asked for it to be sent, a time being in `zone`, the user's: { instant, note },
+// `note` saying how a clock change was handled, or { problem } to tell the model
+const readSendAt = function (text, zone) {
   const trimmed = typeof text === `string` ? text.trim() : ``
 
   if (trimmed === ``) {
@@ -131,8 +132,6 @@ const readSendAt = function (text) {
 
     return { instant: dayjs().add(amount, isHours ? `hour` : `minute`), note: null }
   }
-
-  const zone = getOwnTimeZone()
 
   try {
     const { instant, asked } = readTime(trimmed, zone)
@@ -152,7 +151,7 @@ const readSendAt = function (text) {
   }
 }
 
-const runScheduleNotification = function ({ argumentsText, chatId, briefingId }) {
+const runScheduleNotification = function ({ argumentsText, user, chatId, briefingId }) {
   const args = parseArguments(argumentsText) ?? {}
   const title = typeof args.title === `string` ? args.title.trim().slice(0, 120) : ``
   const message = typeof args.message === `string` ? args.message.trim() : ``
@@ -163,27 +162,28 @@ const runScheduleNotification = function ({ argumentsText, chatId, briefingId })
     return { content: `Not scheduled: a notification needs a title and a message.`, imageId: null }
   }
 
-  const { instant, note, problem } = readSendAt(args.send_at)
+  const zone = user.timeZone
+  const { instant, note, problem } = readSendAt(args.send_at, zone)
 
   if (problem != null) {
     return { content: `Not scheduled: ${problem}.`, imageId: null }
   }
 
   if (instant.valueOf() <= Date.now()) {
-    return { content: `Not scheduled: ${describeSendTime(instant.toISOString())} has already passed. It's ${describeSendTime(new Date().toISOString())} now.`, imageId: null }
+    return { content: `Not scheduled: ${describeSendTime(instant.toISOString(), zone)} has already passed. It's ${describeSendTime(new Date().toISOString(), zone)} now.`, imageId: null }
   }
 
   if (instant.valueOf() > Date.now() + notifications.maxDaysAhead * 24 * 60 * 60 * 1000) {
     return { content: `Not scheduled: a notification can be at most ${notifications.maxDaysAhead} days ahead.`, imageId: null }
   }
 
-  if (notifications.countWaiting() >= notifications.maxWaiting) {
+  if (notifications.countWaiting(user.id) >= notifications.maxWaiting) {
     return { content: `Not scheduled: ${notifications.maxWaiting} notifications are already waiting to be sent. Cancel one that's no longer needed first.`, imageId: null }
   }
 
-  const scheduled = notifications.scheduleNotification({ title, message, priority, sendAt: instant.toDate(), checkNote, briefingId, chatId })
+  const scheduled = notifications.scheduleNotification({ userId: user.id, title, message, priority, sendAt: instant.toDate(), checkNote, briefingId, chatId })
 
-  let content = `Scheduled [${scheduled.id}] "${title}" for ${describeSendTime(scheduled.sendAt)}. Just before then it's checked against what's happened since, then sent, delayed or skipped.`
+  let content = `Scheduled [${scheduled.id}] "${title}" for ${describeSendTime(scheduled.sendAt, zone)}. Just before then it's checked against what's happened since, then sent, delayed or skipped.`
 
   if (note != null) {
     content = `${content} ${note}`
@@ -192,30 +192,30 @@ const runScheduleNotification = function ({ argumentsText, chatId, briefingId })
   return { content, imageId: null }
 }
 
-const runListScheduledNotifications = function () {
-  const waiting = notifications.listWaiting()
+const runListScheduledNotifications = function ({ user }) {
+  const waiting = notifications.listWaiting(user.id)
 
   if (waiting.length === 0) {
     return { content: `No notifications are scheduled.`, imageId: null }
   }
 
   const lines = waiting.map(function (scheduled) {
-    return `- ${describeScheduled(scheduled)}`
+    return `- ${describeScheduled(scheduled, user.timeZone)}`
   })
 
   return { content: `Scheduled notifications waiting to be sent, soonest first:\n${lines.join(`\n`)}`, imageId: null }
 }
 
-const runCancelNotification = function ({ argumentsText }) {
+const runCancelNotification = function ({ argumentsText, user }) {
   const args = parseArguments(argumentsText) ?? {}
   const id = typeof args.id === `string` ? args.id.trim() : ``
-  const scheduled = id === `` ? null : notifications.getScheduled(id)
+  const scheduled = id === `` ? null : notifications.getScheduled(user.id, id)
 
-  if (scheduled == null || scheduled.status !== `waiting` || notifications.cancelScheduled(id) === false) {
+  if (scheduled == null || scheduled.status !== `waiting` || notifications.cancelScheduled(user.id, id) === false) {
     return { content: `There's no scheduled notification with the id "${args.id}" waiting to be sent.`, imageId: null }
   }
 
-  return { content: `Cancelled [${id}] "${scheduled.title}", which was due ${describeSendTime(scheduled.sendAt)}.`, imageId: null }
+  return { content: `Cancelled [${id}] "${scheduled.title}", which was due ${describeSendTime(scheduled.sendAt, user.timeZone)}.`, imageId: null }
 }
 
 // Always offered: notifications show on rook's Notifications page even without ntfy

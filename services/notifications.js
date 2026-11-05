@@ -2,19 +2,19 @@ import cuid from 'cuid'
 import db from './db.js'
 import settings from './settings.js'
 
-// Notifications the model sends the owner. Each is kept in rook, on the Notifications page,
-// and pushed to their phone through ntfy (https://ntfy.sh) when a topic URL is set in Settings.
-// The ntfy app shows it even when rook isn't open.
+// Notifications the model sends a user, each theirs alone (userId). Each is kept in rook, on the
+// Notifications page, and pushed to their phone through ntfy (https://ntfy.sh) when a topic URL
+// is set in their Settings. The ntfy app shows it even when rook isn't open.
 //
 // A briefing sends one straight away (notify_user), or the model schedules one for later, in a
 // chat or a briefing (schedule_notification). A scheduled one waits in scheduledNotifications
 // until it's due, when the model checks it and it's sent, delayed or skipped (see
 // services/notificationChecks.js).
 
-// Older notifications are deleted
+// Older notifications are deleted, per user
 const keptNotifications = 200
 
-// How many scheduled notifications can wait at once, and how far ahead one can be
+// How many scheduled notifications a user can have waiting at once, and how far ahead one can be
 export const maxWaiting = 20
 export const maxDaysAhead = 30
 
@@ -28,48 +28,59 @@ const pushTimeout = 1000 * 10
 const ntfyPriorities = { normal: 3, high: 4 }
 
 const insertNotification = db.query(`
-  INSERT INTO notifications (id, title, message, priority, briefingId, pushStatus, pushError, createdAt)
-  VALUES ($id, $title, $message, $priority, $briefingId, $pushStatus, $pushError, $now)
+  INSERT INTO notifications (id, userId, title, message, priority, briefingId, pushStatus, pushError, createdAt)
+  VALUES ($id, $userId, $title, $message, $priority, $briefingId, $pushStatus, $pushError, $now)
 `)
 const deleteOldNotifications = db.query(`
-  DELETE FROM notifications WHERE id NOT IN (
-    SELECT id FROM notifications ORDER BY createdAt DESC, rowid DESC LIMIT $keep
+  DELETE FROM notifications WHERE userId = $userId AND id NOT IN (
+    SELECT id FROM notifications WHERE userId = $userId ORDER BY createdAt DESC, rowid DESC LIMIT $keep
   )
 `)
-const selectNotification = db.query(`SELECT * FROM notifications WHERE id = $id`)
+const selectNotification = db.query(`SELECT * FROM notifications WHERE id = $id AND userId = $userId`)
 const selectNotifications = db.query(`
   SELECT notifications.*, briefings.startedAt AS briefingStartedAt
   FROM notifications LEFT JOIN briefings ON briefings.id = notifications.briefingId
+  WHERE notifications.userId = $userId
   ORDER BY notifications.createdAt DESC, notifications.rowid DESC LIMIT $limit
 `)
 const selectSentSince = db.query(`
-  SELECT * FROM notifications WHERE createdAt > $since ORDER BY createdAt DESC, rowid DESC LIMIT $limit
+  SELECT * FROM notifications WHERE userId = $userId AND createdAt > $since
+  ORDER BY createdAt DESC, rowid DESC LIMIT $limit
 `)
-const selectLatestCreatedAt = db.query(`SELECT MAX(createdAt) AS createdAt FROM notifications`)
-const deleteNotificationRow = db.query(`DELETE FROM notifications WHERE id = $id`)
+const selectLatestCreatedAt = db.query(`SELECT MAX(createdAt) AS createdAt FROM notifications WHERE userId = $userId`)
+const deleteNotificationRow = db.query(`DELETE FROM notifications WHERE id = $id AND userId = $userId`)
 
 // Each with the title of the chat it was scheduled in (chatTitle), if any
 const scheduledColumns = `scheduledNotifications.*, chats.title AS chatTitle`
 const scheduledFrom = `scheduledNotifications LEFT JOIN chats ON chats.id = scheduledNotifications.chatId`
 
 const insertScheduled = db.query(`
-  INSERT INTO scheduledNotifications (id, title, message, priority, sendAt, checkNote, source, briefingId, chatId, createdAt, updatedAt)
-  VALUES ($id, $title, $message, $priority, $sendAt, $checkNote, $source, $briefingId, $chatId, $now, $now)
+  INSERT INTO scheduledNotifications (id, userId, title, message, priority, sendAt, checkNote, source, briefingId, chatId, createdAt, updatedAt)
+  VALUES ($id, $userId, $title, $message, $priority, $sendAt, $checkNote, $source, $briefingId, $chatId, $now, $now)
 `)
-const selectScheduled = db.query(`SELECT ${scheduledColumns} FROM ${scheduledFrom} WHERE scheduledNotifications.id = $id`)
+const selectScheduled = db.query(`
+  SELECT ${scheduledColumns} FROM ${scheduledFrom}
+  WHERE scheduledNotifications.id = $id AND scheduledNotifications.userId = $userId
+`)
 const selectWaiting = db.query(`
-  SELECT ${scheduledColumns} FROM ${scheduledFrom} WHERE status = 'waiting' ORDER BY sendAt
+  SELECT ${scheduledColumns} FROM ${scheduledFrom}
+  WHERE scheduledNotifications.userId = $userId AND status = 'waiting' ORDER BY sendAt
 `)
+// Every user's, for sending them
 const selectDue = db.query(`
   SELECT ${scheduledColumns} FROM ${scheduledFrom} WHERE status = 'waiting' AND sendAt <= $until ORDER BY sendAt
 `)
 const selectSkippedSince = db.query(`
   SELECT ${scheduledColumns} FROM ${scheduledFrom}
-  WHERE status != 'waiting' AND scheduledNotifications.updatedAt > $since
+  WHERE scheduledNotifications.userId = $userId AND status != 'waiting' AND scheduledNotifications.updatedAt > $since
   ORDER BY scheduledNotifications.updatedAt DESC
 `)
-const countWaitingRows = db.query(`SELECT COUNT(*) AS count FROM scheduledNotifications WHERE status = 'waiting'`)
-const deleteWaitingRow = db.query(`DELETE FROM scheduledNotifications WHERE id = $id AND status = 'waiting'`)
+const countWaitingRows = db.query(`
+  SELECT COUNT(*) AS count FROM scheduledNotifications WHERE userId = $userId AND status = 'waiting'
+`)
+const deleteWaitingRow = db.query(`
+  DELETE FROM scheduledNotifications WHERE id = $id AND userId = $userId AND status = 'waiting'
+`)
 const deleteScheduledRow = db.query(`DELETE FROM scheduledNotifications WHERE id = $id`)
 const updateSkipped = db.query(`
   UPDATE scheduledNotifications SET status = $status, note = $note, updatedAt = $now WHERE id = $id
@@ -82,11 +93,12 @@ const deleteOldSkippedRows = db.query(`
   DELETE FROM scheduledNotifications WHERE status != 'waiting' AND updatedAt < $before
 `)
 
-// Where pushes go, from Settings: { url, token }, with url null while it isn't set up
-export const getNtfySettings = function () {
+// Where a user's pushes go, from their Settings: { url, token }, with url null while it isn't
+// set up
+export const getNtfySettings = function (userId) {
   return {
-    url: settings.get(`ntfyUrl`),
-    token: settings.get(`ntfyToken`),
+    url: settings.get(userId, `ntfyUrl`),
+    token: settings.get(userId, `ntfyToken`),
   }
 }
 
@@ -194,15 +206,16 @@ export const sendTest = async function ({ url, token }) {
   return result
 }
 
-export const getNotification = function (id) {
-  return selectNotification.get({ id }) ?? null
+// The user's notification with that id, or null: another user's reads as none
+export const getNotification = function (userId, id) {
+  return selectNotification.get({ userId, id }) ?? null
 }
 
-// Keeps the notification and pushes it to the phone when ntfy is set up. `briefingId` is the
-// briefing that sent it. Returns the notification, with how the push went (pushStatus,
-// pushError); it never throws.
-export const sendNotification = async function ({ title, message, priority = `normal`, briefingId = null }) {
-  const { url, token } = getNtfySettings()
+// Keeps the notification for the user and pushes it to their phone when their ntfy is set up.
+// `briefingId` is the briefing that sent it. Returns the notification, with how the push went
+// (pushStatus, pushError); it never throws.
+export const sendNotification = async function ({ userId, title, message, priority = `normal`, briefingId = null }) {
+  const { url, token } = getNtfySettings(userId)
 
   let pushStatus = `off`
   let pushError = null
@@ -216,65 +229,68 @@ export const sendNotification = async function ({ title, message, priority = `no
 
   const id = cuid()
 
-  insertNotification.run({ id, title, message, priority, briefingId, pushStatus, pushError, now: new Date().toISOString() })
-  deleteOldNotifications.run({ keep: keptNotifications })
+  insertNotification.run({ id, userId, title, message, priority, briefingId, pushStatus, pushError, now: new Date().toISOString() })
+  deleteOldNotifications.run({ userId, keep: keptNotifications })
 
-  return getNotification(id)
+  return getNotification(userId, id)
 }
 
-// The newest notifications first, each with the start of the briefing that sent it
+// The user's newest notifications first, each with the start of the briefing that sent it
 // (briefingStartedAt), if that's still kept
-export const listNotifications = function (limit = 100) {
-  return selectNotifications.all({ limit })
+export const listNotifications = function (userId, limit = 100) {
+  return selectNotifications.all({ userId, limit })
 }
 
-// The notifications sent after `since` (an ISO date), newest first
-export const listSentSince = function (since, limit) {
-  return selectSentSince.all({ since, limit })
+// The user's notifications sent after `since` (an ISO date), newest first
+export const listSentSince = function (userId, since, limit) {
+  return selectSentSince.all({ userId, since, limit })
 }
 
-export const deleteNotification = function (id) {
-  deleteNotificationRow.run({ id })
+export const deleteNotification = function (userId, id) {
+  deleteNotificationRow.run({ userId, id })
 }
 
-export const getScheduled = function (id) {
-  return selectScheduled.get({ id }) ?? null
+// The user's scheduled notification with that id, or null: another user's reads as none
+export const getScheduled = function (userId, id) {
+  return selectScheduled.get({ userId, id }) ?? null
 }
 
-// Keeps a notification to send at `sendAt` (a Date), once the model has checked it.
+// Keeps a notification to send the user at `sendAt` (a Date), once the model has checked it.
 // `checkNote` is what to check first, or empty. It was scheduled by the briefing `briefingId`,
 // or else in the chat `chatId`. Returns the scheduled notification.
-export const scheduleNotification = function ({ title, message, priority = `normal`, sendAt, checkNote = ``, briefingId = null, chatId = null }) {
+export const scheduleNotification = function ({ userId, title, message, priority = `normal`, sendAt, checkNote = ``, briefingId = null, chatId = null }) {
   const id = cuid()
   const source = briefingId == null ? `chat` : `briefing`
 
-  insertScheduled.run({ id, title, message, priority, sendAt: sendAt.toISOString(), checkNote, source, briefingId, chatId, now: new Date().toISOString() })
+  insertScheduled.run({ id, userId, title, message, priority, sendAt: sendAt.toISOString(), checkNote, source, briefingId, chatId, now: new Date().toISOString() })
 
-  return getScheduled(id)
+  return getScheduled(userId, id)
 }
 
-// The scheduled notifications still to send, soonest first
-export const listWaiting = function () {
-  return selectWaiting.all()
+// The user's scheduled notifications still to send, soonest first
+export const listWaiting = function (userId) {
+  return selectWaiting.all({ userId })
 }
 
-export const countWaiting = function () {
-  return countWaitingRows.get().count
+export const countWaiting = function (userId) {
+  return countWaitingRows.get({ userId }).count
 }
 
-// The ones waiting to be sent at or before `until` (a Date), soonest first
+// Every user's waiting to be sent at or before `until` (a Date), soonest first; each has its
+// userId
 export const listDue = function (until) {
   return selectDue.all({ until: until.toISOString() })
 }
 
-// The ones skipped or missed after `since` (a Date), most recent first
-export const listSkippedSince = function (since) {
-  return selectSkippedSince.all({ since: since.toISOString() })
+// The user's skipped or missed after `since` (a Date), most recent first
+export const listSkippedSince = function (userId, since) {
+  return selectSkippedSince.all({ userId, since: since.toISOString() })
 }
 
-// Cancels a scheduled notification that's still waiting. Returns whether there was one.
-export const cancelScheduled = function (id) {
-  return deleteWaitingRow.run({ id }).changes > 0
+// Cancels a scheduled notification of the user's that's still waiting. Returns whether there
+// was one.
+export const cancelScheduled = function (userId, id) {
+  return deleteWaitingRow.run({ userId, id }).changes > 0
 }
 
 // Once it's been sent; it's in notifications from then on
@@ -297,26 +313,26 @@ export const deleteOldSkipped = function () {
   deleteOldSkippedRows.run({ before })
 }
 
-// When the Notifications page was last shown, as an ISO date, or null if never
-export const getViewedAt = function () {
-  return settings.get(`notificationsViewedAt`)
+// When the user last saw the Notifications page, as an ISO date, or null if never
+export const getViewedAt = function (userId) {
+  return settings.get(userId, `notificationsViewedAt`)
 }
 
 // Called when the Notifications page is shown, so its nav item stops saying there's something new
-export const markViewed = function () {
-  settings.set(`notificationsViewedAt`, new Date().toISOString())
+export const markViewed = function (userId) {
+  settings.set(userId, `notificationsViewedAt`, new Date().toISOString())
 }
 
-// Whether a notification has arrived since the Notifications page was last shown, for the dot
-// on its nav item
-export const hasUnseen = function () {
-  const row = selectLatestCreatedAt.get()
+// Whether a notification has arrived since the user last saw the Notifications page, for the
+// dot on its nav item
+export const hasUnseen = function (userId) {
+  const row = selectLatestCreatedAt.get({ userId })
 
   if (row.createdAt == null) {
     return false
   }
 
-  const viewedAt = getViewedAt()
+  const viewedAt = getViewedAt(userId)
 
   if (viewedAt == null) {
     return true

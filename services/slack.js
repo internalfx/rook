@@ -1,8 +1,9 @@
-import config from '../configure.js'
 import caches from './caches.js'
+import settings from './settings.js'
 
-// Slack's Web API, only ever read, with the owner's user token (config.slack.oauthToken), so rook
-// sees what they see. Which conversations it reads is chosen in Settings (see ai-tools/slack.js).
+// Slack's Web API, only ever read, with each user's own user token (slackToken in their
+// Settings), so rook sees what they see. Which conversations it reads is chosen in Settings too
+// (see ai-tools/slack.js).
 // Channels, private channels, group DMs and DMs are all "conversations" to Slack, read the same
 // way.
 // https://api.slack.com/methods
@@ -28,18 +29,20 @@ const skippedSubtypes = [
 // Slack's errors that mean the token itself is the problem
 const badTokenErrors = [`invalid_auth`, `not_authed`, `token_revoked`, `token_expired`, `account_inactive`]
 
-export const isConfigured = function () {
-  const token = config.slack?.oauthToken
-  return typeof token === `string` && token !== ``
+// The user's own Slack user token, from their Settings, or null
+const getToken = function (userId) {
+  const token = settings.get(userId, `slackToken`)
+  return typeof token === `string` && token !== `` ? token : null
 }
 
-// Calls a Web API method and returns Slack's answer. Most failures come back as { ok: false },
-// which become an Error saying what to do. Pass `signal` to cancel.
-const callSlack = async function (method, params, signal) {
-  if (isConfigured() === false) {
-    throw new Error(`Add a Slack user token to config.js as slack.oauthToken.`)
-  }
+// Whether the user has a Slack token
+export const isConfigured = function (userId) {
+  return getToken(userId) != null
+}
 
+// Calls a Web API method with `token` and returns Slack's answer. Most failures come back as
+// { ok: false }, which become an Error saying what to do. Pass `signal` to cancel.
+const callSlackWith = async function (token, method, params, signal) {
   const url = new URL(`https://slack.com/api/${method}`)
 
   for (const [key, value] of Object.entries(params)) {
@@ -55,7 +58,7 @@ const callSlack = async function (method, params, signal) {
   }
 
   const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${config.slack.oauthToken}` },
+    headers: { Authorization: `Bearer ${token}` },
     signal: AbortSignal.any(signals),
   })
 
@@ -75,7 +78,7 @@ const callSlack = async function (method, params, signal) {
   }
 
   if (badTokenErrors.includes(body.error)) {
-    throw new Error(`The Slack token in config.js isn't valid (${body.error}).`)
+    throw new Error(`The Slack token isn't valid (${body.error}).`)
   }
 
   if (body.error === `missing_scope`) {
@@ -83,6 +86,28 @@ const callSlack = async function (method, params, signal) {
   }
 
   throw new Error(`Slack ${method} failed: ${body.error}`)
+}
+
+// Calls a Web API method as the user, with their token
+const callSlack = async function (userId, method, params, signal) {
+  const token = getToken(userId)
+
+  if (token == null) {
+    throw new Error(`Add your Slack user token in Settings.`)
+  }
+
+  return callSlackWith(token, method, params, signal)
+}
+
+// Tries a token a user has typed in Settings: { ok: true, name }, the name of the Slack account
+// it belongs to, or { ok: false, error }
+export const checkToken = async function (token, signal) {
+  try {
+    const body = await callSlackWith(token, `auth.test`, {}, signal)
+    return { ok: true, name: body.user }
+  } catch (err) {
+    return { ok: false, error: err.message }
+  }
 }
 
 // Loads under way, by cache key. A briefing reads its conversations at the same time, so they
@@ -105,24 +130,25 @@ const getCached = function (key, load) {
   return promise
 }
 
-// The owner's own Slack user id. Kept for a day.
-const getMyUserId = function (signal) {
-  return getCached(`slack:me`, async function () {
-    const body = await callSlack(`auth.test`, {}, signal)
+// The user's own Slack user id. Kept for a day. The caches are per user, like everything read
+// with their token.
+const getMyUserId = function (userId, signal) {
+  return getCached(`slack:${userId}:me`, async function () {
+    const body = await callSlack(userId, `auth.test`, {}, signal)
     return body.user_id
   })
 }
 
-// Everyone in the workspace, as maps from their user id and from their handle to
+// Everyone in the user's workspace, as maps from their user id and from their handle to
 // { name, handle }. The name is their full name where they've given one. Kept for a day.
-const getUsers = function (signal) {
-  return getCached(`slack:users`, async function () {
+const getUsers = function (userId, signal) {
+  return getCached(`slack:${userId}:users`, async function () {
     const byId = new Map()
     const byHandle = new Map()
     let cursor = ``
 
     do {
-      const body = await callSlack(`users.list`, { limit: 200, cursor }, signal)
+      const body = await callSlack(userId, `users.list`, { limit: 200, cursor }, signal)
 
       for (const member of body.members) {
         const name = member.profile?.real_name || member.real_name || member.profile?.display_name || member.name
@@ -141,7 +167,7 @@ const getUsers = function (signal) {
 
 // A conversation as rook shows it: { id, kind, label, handle }. `kind` is channel, private,
 // group or dm. The label is "#ops" for a channel, "@Jane Doe" for a DM, and "@Jane Doe, @Bob
-// Smith" for a group DM, leaving the owner out. Null for a DM with someone who has left.
+// Smith" for a group DM, leaving the user out. Null for a DM with someone who has left.
 const toConversation = function (channel, users, myId) {
   if (channel.is_im === true) {
     if (channel.is_user_deleted === true) {
@@ -196,23 +222,24 @@ const makeLabelsUnique = function (conversations) {
 // The order they're listed in: channels, then group DMs and DMs, each by label
 const kindOrder = [`channel`, `private`, `group`, `dm`]
 
-// The channels, group DMs and DMs the owner is in, as [{ id, kind, label }], for choosing what
+// The channels, group DMs and DMs the user is in, as [{ id, kind, label }], for choosing what
 // rook reads. Archived ones are left out. Kept for a minute.
-export const listMyConversations = async function (signal) {
-  const cached = caches.flash.get(`slack:conversations`)
+export const listMyConversations = async function (userId, signal) {
+  const cacheKey = `slack:${userId}:conversations`
+  const cached = caches.flash.get(cacheKey)
 
   if (cached != null) {
     return cached
   }
 
-  const users = await getUsers(signal)
-  const myId = await getMyUserId(signal)
+  const users = await getUsers(userId, signal)
+  const myId = await getMyUserId(userId, signal)
   const conversations = []
   let cursor = ``
 
   do {
     const params = { types: `public_channel,private_channel,mpim,im`, exclude_archived: true, limit: 200, cursor }
-    const body = await callSlack(`users.conversations`, params, signal)
+    const body = await callSlack(userId, `users.conversations`, params, signal)
 
     for (const channel of body.channels) {
       const conversation = toConversation(channel, users, myId)
@@ -241,7 +268,7 @@ export const listMyConversations = async function (signal) {
     return { id: conversation.id, kind: conversation.kind, label: conversation.label }
   })
 
-  caches.flash.set(`slack:conversations`, listed)
+  caches.flash.set(cacheKey, listed)
 
   return listed
 }
@@ -282,11 +309,11 @@ const formatText = function (text, users) {
   return replaced.replaceAll(`&lt;`, `<`).replaceAll(`&gt;`, `>`).replaceAll(`&amp;`, `&`)
 }
 
-// "Nov 2, 2026, 1:30 PM" from a Slack timestamp ("1730563200.123456", in seconds), in the
-// server's time zone, which is the owner's
-const describeTime = function (ts) {
+// "Nov 2, 2026, 1:30 PM" from a Slack timestamp ("1730563200.123456", in seconds), in the user's
+// time zone
+const describeTime = function (ts, timeZone) {
   const date = new Date(Number(ts) * 1000)
-  return date.toLocaleString(`en-US`, { dateStyle: `medium`, timeStyle: `short` })
+  return date.toLocaleString(`en-US`, { dateStyle: `medium`, timeStyle: `short`, timeZone })
 }
 
 const shorten = function (text) {
@@ -299,7 +326,7 @@ const shorten = function (text) {
   return `${trimmed.slice(0, messageCharLimit)}…`
 }
 
-// Who wrote a message: their name, marked when it's the owner, or the bot's name
+// Who wrote a message: their name, marked when it's the user, or the bot's name
 const describeAuthor = function (message, users, myId) {
   if (message.user != null) {
     const name = users.byId.get(message.user)?.name ?? message.user
@@ -340,13 +367,14 @@ const describeContent = function (message, users) {
   return nonEmpty.join(` `)
 }
 
-// One line for a message: "- Nov 2, 2026, 1:30 PM, Jane Doe: text (3 replies)"
-const describeMessage = function (message, users, myId) {
+// One line for a message: "- Nov 2, 2026, 1:30 PM, Jane Doe: text (3 replies)", its time in the
+// user's zone
+const describeMessage = function (message, users, myId, timeZone) {
   const author = describeAuthor(message, users, myId)
   const content = describeContent(message, users)
   const replyCount = message.reply_count ?? 0
 
-  let line = `- ${describeTime(message.ts)}, ${author}: ${content}`
+  let line = `- ${describeTime(message.ts, timeZone)}, ${author}: ${content}`
 
   if (replyCount > 0) {
     line = `${line} (${replyCount} ${replyCount === 1 ? `reply` : `replies`})`
@@ -360,8 +388,8 @@ const isShown = function (message) {
 }
 
 // The latest replies in a thread, oldest first, without the message that started it
-const readReplies = async function ({ channelId, threadTs, signal }) {
-  const body = await callSlack(`conversations.replies`, { channel: channelId, ts: threadTs, limit: 200 }, signal)
+const readReplies = async function ({ userId, channelId, threadTs, signal }) {
+  const body = await callSlack(userId, `conversations.replies`, { channel: channelId, ts: threadTs, limit: 200 }, signal)
 
   const replies = body.messages.filter(function (message) {
     return message.ts !== threadTs && isShown(message)
@@ -370,13 +398,14 @@ const readReplies = async function ({ channelId, threadTs, signal }) {
   return replies.slice(-repliesPerThread)
 }
 
-// A conversation's messages as text for the model, oldest first, each thread's latest replies
-// indented under it. `oldest` is a Date to read from (or null for the latest messages); `limit`
-// is the most messages, the newest kept; `threadLimit` how many of the newest threads get their
-// replies. Returns { text, messageCount, hasMore }, where hasMore says older ones were left out.
-export const readConversation = async function ({ channelId, oldest = null, limit, threadLimit, signal }) {
-  const users = await getUsers(signal)
-  const myId = await getMyUserId(signal)
+// A conversation's messages as text for the model, read as the user, oldest first, each thread's
+// latest replies indented under it, with times in `timeZone`, the user's. `oldest` is a Date to
+// read from (or null for the latest messages); `limit` is the most messages, the newest kept;
+// `threadLimit` how many of the newest threads get their replies. Returns { text, messageCount,
+// hasMore }, where hasMore says older ones were left out.
+export const readConversation = async function ({ userId, timeZone, channelId, oldest = null, limit, threadLimit, signal }) {
+  const users = await getUsers(userId, signal)
+  const myId = await getMyUserId(userId, signal)
 
   const params = { channel: channelId, limit }
 
@@ -384,7 +413,7 @@ export const readConversation = async function ({ channelId, oldest = null, limi
     params.oldest = String(oldest.getTime() / 1000)
   }
 
-  const body = await callSlack(`conversations.history`, params, signal)
+  const body = await callSlack(userId, `conversations.history`, params, signal)
 
   // Slack gives the newest first
   const messages = body.messages.filter(isShown).reverse()
@@ -397,31 +426,31 @@ export const readConversation = async function ({ channelId, oldest = null, limi
   const repliesByTs = new Map()
 
   for (const thread of threadsWithReplies) {
-    const replies = await readReplies({ channelId, threadTs: thread.ts, signal })
+    const replies = await readReplies({ userId, channelId, threadTs: thread.ts, signal })
     repliesByTs.set(thread.ts, replies)
   }
 
   const lines = []
 
   for (const message of messages) {
-    lines.push(describeMessage(message, users, myId))
+    lines.push(describeMessage(message, users, myId, timeZone))
 
     const replies = repliesByTs.get(message.ts) ?? []
 
     for (const reply of replies) {
-      lines.push(`  ${describeMessage(reply, users, myId)}`)
+      lines.push(`  ${describeMessage(reply, users, myId, timeZone)}`)
     }
   }
 
   return { text: lines.join(`\n`), messageCount: messages.length, hasMore: body.has_more === true }
 }
 
-// Searches Slack and keeps the matches in `conversations` (the picked ones, as [{ id, label }]),
-// newest first, up to `limit`. Search covers everything the owner can see, so this is what keeps
-// it to the picked conversations. Returns { text, matchCount }.
-export const searchMessages = async function ({ query, conversations, limit, signal }) {
-  const users = await getUsers(signal)
-  const myId = await getMyUserId(signal)
+// Searches Slack as the user and keeps the matches in `conversations` (their picks, as
+// [{ id, label }]), newest first, up to `limit`. Search covers everything they can see, so this
+// is what keeps it to the picked conversations. Returns { text, matchCount }.
+export const searchMessages = async function ({ userId, timeZone, query, conversations, limit, signal }) {
+  const users = await getUsers(userId, signal)
+  const myId = await getMyUserId(userId, signal)
 
   const labelsById = new Map(conversations.map(function (conversation) {
     return [conversation.id, conversation.label]
@@ -432,7 +461,7 @@ export const searchMessages = async function ({ query, conversations, limit, sig
   let pageCount = 1
 
   while (lines.length < limit && page <= pageCount && page <= searchPages) {
-    const body = await callSlack(`search.messages`, { query, sort: `timestamp`, count: 100, page }, signal)
+    const body = await callSlack(userId, `search.messages`, { query, sort: `timestamp`, count: 100, page }, signal)
 
     for (const match of body.messages.matches) {
       const label = labelsById.get(match.channel?.id)
@@ -441,7 +470,7 @@ export const searchMessages = async function ({ query, conversations, limit, sig
         continue
       }
 
-      const line = describeMessage(match, users, myId).replace(/^- /, `- ${label}, `)
+      const line = describeMessage(match, users, myId, timeZone).replace(/^- /, `- ${label}, `)
       lines.push(`${line} ${match.permalink}`)
     }
 
@@ -454,6 +483,7 @@ export const searchMessages = async function ({ query, conversations, limit, sig
 
 export default {
   isConfigured,
+  checkToken,
   listMyConversations,
   readConversation,
   searchMessages,

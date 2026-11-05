@@ -439,9 +439,9 @@ export const formatNumber = function (value) {
   return String(tidied)
 }
 
-// A date the model gave, as YYYY-MM-DD; "today" is today in the owner's time zone.
+// A date the model gave, as YYYY-MM-DD; "today" is today in `zone`, the user's time zone.
 // `label` names the argument, for when it's missing.
-export const readDay = function (text, label) {
+export const readDay = function (text, label, zone) {
   if (typeof text !== `string` || text.trim() === ``) {
     throw fail(`${label} is missing. Give dates as YYYY-MM-DD, or today.`)
   }
@@ -449,7 +449,7 @@ export const readDay = function (text, label) {
   const trimmed = text.trim()
 
   if (trimmed.toLowerCase() === `today`) {
-    return tasks.today()
+    return tasks.today(zone)
   }
 
   if (tasks.isValidDay(trimmed) === false) {
@@ -459,33 +459,34 @@ export const readDay = function (text, label) {
   return trimmed
 }
 
-// "Sun 1 Nov 2026", with "(today)" when it is
-const describeDay = function (date) {
+// "Sun 1 Nov 2026", with "(today)" when it is in `zone`, the user's time zone
+const describeDay = function (date, zone) {
   const text = date.format(dayFormat)
 
-  if (date.format(`YYYY-MM-DD`) === tasks.today()) {
+  if (date.format(`YYYY-MM-DD`) === tasks.today(zone)) {
     return `${text} (today)`
   }
 
   return text
 }
 
-// E.g. "Fri 25 Dec 2026 is 54 days after Sun 1 Nov 2026 (today) (7 weeks and 5 days)."
-export const daysBetween = function (fromText, toText) {
+// E.g. "Fri 25 Dec 2026 is 54 days after Sun 1 Nov 2026 (today) (7 weeks and 5 days)." Today is
+// in `zone`, the user's time zone, as in the rest of these.
+export const daysBetween = function (fromText, toText, zone) {
   // dayjs reads a plain YYYY-MM-DD as a day in the server's time zone, and counts days across
-  // a clock change correctly
-  const from = dayjs(readDay(fromText, `from`))
-  const to = dayjs(readDay(toText, `to`))
+  // a clock change correctly; which zone doesn't matter for whole days
+  const from = dayjs(readDay(fromText, `from`, zone))
+  const to = dayjs(readDay(toText, `to`, zone))
   const days = to.diff(from, `day`)
 
   if (days === 0) {
-    return `That's the same day: ${describeDay(from)}.`
+    return `That's the same day: ${describeDay(from, zone)}.`
   }
 
   const count = Math.abs(days)
   const direction = days > 0 ? `after` : `before`
 
-  let text = `${describeDay(to)} is ${plural(count, `day`)} ${direction} ${describeDay(from)}`
+  let text = `${describeDay(to, zone)} is ${plural(count, `day`)} ${direction} ${describeDay(from, zone)}`
 
   if (count >= 7) {
     const weeks = Math.floor(count / 7)
@@ -499,8 +500,8 @@ export const daysBetween = function (fromText, toText) {
 
 // E.g. "45 days after Sun 1 Nov 2026 (today) is Wed 16 Dec 2026 (2026-12-16)." `amount` is a whole
 // number, negative to go back; `unit` is one of dateUnits, or the same without the s.
-export const addToDate = function (dateText, amount, unit) {
-  const day = readDay(dateText, `date`)
+export const addToDate = function (dateText, amount, unit, zone) {
+  const day = readDay(dateText, `date`, zone)
 
   // Models sometimes send the number as text
   const count = typeof amount === `string` && amount.trim() !== `` ? Number(amount) : amount
@@ -523,13 +524,13 @@ export const addToDate = function (dateText, amount, unit) {
   const result = start.add(count, unitName)
 
   if (result.isValid() === false || result.year() < 1 || result.year() > 9999) {
-    throw fail(`That's too far from ${describeDay(start)} to work out.`)
+    throw fail(`That's too far from ${describeDay(start, zone)} to work out.`)
   }
 
   const direction = count < 0 ? `before` : `after`
   const singular = unitName.slice(0, -1)
 
-  let text = `${plural(Math.abs(count), singular)} ${direction} ${describeDay(start)} is ${describeDay(result)} (${result.format(`YYYY-MM-DD`)}).`
+  let text = `${plural(Math.abs(count), singular)} ${direction} ${describeDay(start, zone)} is ${describeDay(result, zone)} (${result.format(`YYYY-MM-DD`)}).`
 
   // dayjs keeps to the end of a shorter month: 31 Jan + 1 month is 28 Feb
   const isByMonth = unitName === `months` || unitName === `years`
@@ -545,7 +546,7 @@ export const addToDate = function (dateText, amount, unit) {
 // day itself, and the one after that, since "next Friday" can mean either. E.g. "The next Friday
 // after Sun 1 Nov 2026 (today) is Fri 6 Nov 2026 (2026-11-06), 5 days later. The one after that
 // is Fri 13 Nov 2026 (2026-11-13)."
-export const findWeekday = function (weekdayText, fromText, direction) {
+export const findWeekday = function (weekdayText, fromText, direction, zone) {
   // "friday", "Fri" or "fridays" all work
   const name = typeof weekdayText === `string` ? weekdayText.trim().toLowerCase().replace(/s$/, ``) : ``
   const position = weekdays.findIndex(function (weekday) {
@@ -557,7 +558,7 @@ export const findWeekday = function (weekdayText, fromText, direction) {
   }
 
   const isMissing = fromText == null || (typeof fromText === `string` && fromText.trim() === ``)
-  const from = dayjs(readDay(isMissing ? `today` : fromText, `from`))
+  const from = dayjs(readDay(isMissing ? `today` : fromText, `from`, zone))
 
   const way = direction == null || direction === `` ? `after` : direction
 
@@ -580,11 +581,11 @@ export const findWeekday = function (weekdayText, fromText, direction) {
   const dayName = `${weekdays[position][0].toUpperCase()}${weekdays[position].slice(1)}`
 
   let text = way === `after`
-    ? `The next ${dayName} after ${describeDay(from)} is ${describeDay(first)} (${first.format(`YYYY-MM-DD`)}), ${plural(gap, `day`)} later. The one after that is ${describeDay(second)} (${second.format(`YYYY-MM-DD`)}).`
-    : `The last ${dayName} before ${describeDay(from)} is ${describeDay(first)} (${first.format(`YYYY-MM-DD`)}), ${plural(gap, `day`)} earlier. The one before that is ${describeDay(second)} (${second.format(`YYYY-MM-DD`)}).`
+    ? `The next ${dayName} after ${describeDay(from, zone)} is ${describeDay(first, zone)} (${first.format(`YYYY-MM-DD`)}), ${plural(gap, `day`)} later. The one after that is ${describeDay(second, zone)} (${second.format(`YYYY-MM-DD`)}).`
+    : `The last ${dayName} before ${describeDay(from, zone)} is ${describeDay(first, zone)} (${first.format(`YYYY-MM-DD`)}), ${plural(gap, `day`)} earlier. The one before that is ${describeDay(second, zone)} (${second.format(`YYYY-MM-DD`)}).`
 
   if (from.day() === target) {
-    text = `${text} ${describeDay(from)} is itself a ${dayName}.`
+    text = `${text} ${describeDay(from, zone)} is itself a ${dayName}.`
   }
 
   return text

@@ -1,4 +1,4 @@
-import settings from '../services/settings.js'
+import config from '../configure.js'
 import tasks from '../services/tasks.js'
 import { getEmbeddingModel } from './memories.js'
 import { parseArguments } from './arguments.js'
@@ -7,9 +7,9 @@ import prompts from '../prompts.js'
 // add_task, find_tasks, update_task and complete_task: the user's to-do list (see
 // services/tasks.js)
 
-// Tasks are on unless switched off in Settings
+// Tasks are on unless switched off in config.js
 export const isTasksOn = function () {
-  return settings.get(`tasksOff`) !== true
+  return config.tools?.tasks !== false
 }
 
 // The descriptions are in prompts.js
@@ -167,17 +167,18 @@ const readTaskFields = function (args) {
 }
 
 // The task with the id the model gave, or null
-const findTaskById = function (args) {
+const findTaskById = function (user, args) {
   if (typeof args.id !== `string`) {
     return null
   }
 
-  return tasks.getTask(args.id.trim())
+  return tasks.getTask(user.id, args.id.trim())
 }
 
-const describeTaskList = function (taskList) {
+// Each task on a line, its due date in `zone`, the user's time zone
+const describeTaskList = function (taskList, zone) {
   const lines = taskList.map(function (task) {
-    return `- ${tasks.describeForModel(task)}`
+    return `- ${tasks.describeForModel(task, zone)}`
   })
 
   return lines.join(`\n`)
@@ -186,7 +187,7 @@ const describeTaskList = function (taskList) {
 // The most tasks find_tasks lists at once
 const maxListedTasks = 50
 
-const runAddTask = function ({ argumentsText, chatId }) {
+const runAddTask = function ({ argumentsText, user, chatId }) {
   const args = parseArguments(argumentsText) ?? {}
   const { fields, problem } = readTaskFields(args)
 
@@ -198,9 +199,9 @@ const runAddTask = function ({ argumentsText, chatId }) {
     return { content: `The task wasn't added: no title was given.`, imageId: null }
   }
 
-  const task = tasks.createTask({ ...fields, chatId })
+  const task = tasks.createTask({ ...fields, userId: user.id, chatId })
 
-  return { content: `Added the task ${tasks.describeForModel(task)}`, imageId: null }
+  return { content: `Added the task ${tasks.describeForModel(task, user.timeZone)}`, imageId: null }
 }
 
 // How many tasks find_tasks gives as close in meaning, besides those containing the query's words
@@ -209,8 +210,9 @@ const closeTaskLimit = 5
 // What find_tasks says for a query: the tasks containing its words, then the closest in meaning
 // that aren't among those. Searching by meaning needs an embedding model; when it fails, the
 // keyword matches are still given, and the model is told why.
-const describeTaskSearch = async function ({ query, includeDone, embeddingModel, signal }) {
-  const wordMatches = tasks.searchTasks({ query, includeDone })
+const describeTaskSearch = async function ({ user, query, includeDone, embeddingModel, signal }) {
+  const userId = user.id
+  const wordMatches = tasks.searchTasks({ userId, query, includeDone })
 
   let meaningMatches = []
   let meaningProblem = null
@@ -218,6 +220,7 @@ const describeTaskSearch = async function ({ query, includeDone, embeddingModel,
   if (embeddingModel != null) {
     try {
       const closest = await tasks.searchByMeaning({
+        userId,
         query,
         model: embeddingModel,
         includeDone,
@@ -245,11 +248,11 @@ const describeTaskSearch = async function ({ query, includeDone, embeddingModel,
   const sections = []
 
   if (wordMatches.length > 0) {
-    sections.push(`Containing those words, best matches first:\n${describeTaskList(wordMatches)}`)
+    sections.push(`Containing those words, best matches first:\n${describeTaskList(wordMatches, user.timeZone)}`)
   }
 
   if (meaningMatches.length > 0) {
-    sections.push(`Close in meaning, closest first. Ignore any that aren't about it:\n${describeTaskList(meaningMatches)}`)
+    sections.push(`Close in meaning, closest first. Ignore any that aren't about it:\n${describeTaskList(meaningMatches, user.timeZone)}`)
   }
 
   if (sections.length === 0) {
@@ -263,22 +266,22 @@ const describeTaskSearch = async function ({ query, includeDone, embeddingModel,
   return `Tasks for "${query}":\n\n${sections.join(`\n\n`)}`
 }
 
-const runFindTasks = async function ({ argumentsText, toolSettings, signal }) {
+const runFindTasks = async function ({ argumentsText, toolSettings, user, signal }) {
   const args = parseArguments(argumentsText) ?? {}
   const query = typeof args.query === `string` ? args.query.trim() : ``
   const includeDone = args.include_done === true
 
   if (query !== ``) {
     const embeddingModel = toolSettings.embeddingModel ?? null
-    const content = await describeTaskSearch({ query, includeDone, embeddingModel, signal })
+    const content = await describeTaskSearch({ user, query, includeDone, embeddingModel, signal })
 
     return { content, imageId: null }
   }
 
-  let taskList = tasks.listOpen()
+  let taskList = tasks.listOpen(user.id)
 
   if (includeDone) {
-    taskList = [...taskList, ...tasks.listDone(20)]
+    taskList = [...taskList, ...tasks.listDone(user.id, 20)]
   }
 
   if (taskList.length === 0) {
@@ -286,7 +289,7 @@ const runFindTasks = async function ({ argumentsText, toolSettings, signal }) {
   }
 
   const listed = taskList.slice(0, maxListedTasks)
-  let content = `The to-do list, soonest due first${includeDone ? `, then the tasks done most recently` : ``}:\n\n${describeTaskList(listed)}`
+  let content = `The to-do list, soonest due first${includeDone ? `, then the tasks done most recently` : ``}:\n\n${describeTaskList(listed, user.timeZone)}`
 
   if (taskList.length > listed.length) {
     content = `${content}\n\n…and ${taskList.length - listed.length} more. Search with a query to find others.`
@@ -295,9 +298,9 @@ const runFindTasks = async function ({ argumentsText, toolSettings, signal }) {
   return { content, imageId: null }
 }
 
-const runUpdateTask = function ({ argumentsText }) {
+const runUpdateTask = function ({ argumentsText, user }) {
   const args = parseArguments(argumentsText) ?? {}
-  const task = findTaskById(args)
+  const task = findTaskById(user, args)
 
   if (task == null) {
     return { content: `There's no task with the id "${args.id}".`, imageId: null }
@@ -310,19 +313,19 @@ const runUpdateTask = function ({ argumentsText }) {
   }
 
   // Whatever the model leaves out stays as it is
-  const updated = tasks.updateTask(task.id, {
+  const updated = tasks.updateTask(user.id, task.id, {
     title: fields.title ?? task.title,
     notes: fields.notes ?? task.notes,
     priority: fields.priority ?? task.priority,
     dueDate: fields.dueDate === undefined ? task.dueDate : fields.dueDate,
   })
 
-  return { content: `Updated the task ${tasks.describeForModel(updated)}`, imageId: null }
+  return { content: `Updated the task ${tasks.describeForModel(updated, user.timeZone)}`, imageId: null }
 }
 
-const runCompleteTask = function ({ argumentsText }) {
+const runCompleteTask = function ({ argumentsText, user }) {
   const args = parseArguments(argumentsText) ?? {}
-  const task = findTaskById(args)
+  const task = findTaskById(user, args)
 
   if (task == null) {
     return { content: `There's no task with the id "${args.id}".`, imageId: null }
@@ -330,8 +333,8 @@ const runCompleteTask = function ({ argumentsText }) {
 
   const done = args.done !== false
   const note = typeof args.note === `string` ? args.note.trim().slice(0, tasks.maxDoneNoteLength) : null
-  const updated = tasks.setDone(task.id, done, note)
-  const description = tasks.describeForModel(updated)
+  const updated = tasks.setDone(user.id, task.id, done, note)
+  const description = tasks.describeForModel(updated, user.timeZone)
 
   if (done) {
     return { content: `Marked done: ${description}`, imageId: null }
@@ -340,7 +343,7 @@ const runCompleteTask = function ({ argumentsText }) {
   return { content: `Put back on the to-do list: ${description}`, imageId: null }
 }
 
-// Offered only while tasks are on. The model can't delete tasks; only the owner can, on the
+// Offered only while tasks are on. The model can't delete tasks; only the user can, on the
 // Tasks page.
 export const tools = [
   {
