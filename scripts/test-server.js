@@ -33,6 +33,11 @@ config.baseURL = `http://localhost:${config.port}`
 // server's
 config.session = { ...config.session, sessionCookieName: `ROOK-test.token` }
 config.cronOff = true
+// Plain HTTP on this machine, whatever config.js says: a production copy would refuse to set its
+// secure cookie here, and would hide errors and stop reloading templates
+config.env = `development`
+config.isDevelopment = true
+config.isProduction = false
 
 // Before the services read it, as app.js does
 checkConfig()

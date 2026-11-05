@@ -34,7 +34,14 @@
 
   <body class="bg-gray-100 text-gray-900">
     <main class="mx-auto max-w-screen-sm px-4 py-12 sm:py-20">
-      <div class="mb-8 text-center text-2xl font-bold">{{ config.appName }}</div>
+      {# The rook from static/favicon.svg, drawn inline in the text colour so it stays dark on this
+         light page whatever the system theme #}
+      <div class="mb-8 flex flex-col items-center gap-3">
+        <svg class="size-20 fill-current" viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M14 6H22V12H28V6H36V12H42V6H50V19L45 24V44L50 49V52H54V58H10V52H14V49L19 44V24L14 19Z"/>
+        </svg>
+        <div class="text-4xl font-bold tracking-tight">Rook</div>
+      </div>
       {# Messages stay inline here, next to the small centered form, rather than as toasts #}
       {% for flash in ctx.getFlash() %}
         {% set colors = 'border-sky-200 bg-sky-50 text-sky-800' %}
