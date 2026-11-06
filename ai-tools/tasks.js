@@ -56,10 +56,6 @@ const findTasksTool = {
           type: `string`,
           description: prompts.tools.find_tasks.parameters.query,
         },
-        include_done: {
-          type: `boolean`,
-          description: prompts.tools.find_tasks.parameters.include_done,
-        },
       },
     },
   },
@@ -184,8 +180,10 @@ const describeTaskList = function (taskList, zone) {
   return lines.join(`\n`)
 }
 
-// The most tasks find_tasks lists at once
+// The most tasks find_tasks lists at once, and how many recently done ones it lists after the
+// open ones
 const maxListedTasks = 50
+const recentDoneLimit = 20
 
 const runAddTask = function ({ argumentsText, user, chatId }) {
   const args = parseArguments(argumentsText) ?? {}
@@ -208,11 +206,12 @@ const runAddTask = function ({ argumentsText, user, chatId }) {
 const closeTaskLimit = 5
 
 // What find_tasks says for a query: the tasks containing its words, then the closest in meaning
-// that aren't among those. Searching by meaning needs an embedding model; when it fails, the
-// keyword matches are still given, and the model is told why.
-const describeTaskSearch = async function ({ user, query, includeDone, embeddingModel, signal }) {
+// that aren't among those. Done tasks are always searched too, so the model can find one the
+// user has finished. Searching by meaning needs an embedding model; when it fails, the keyword
+// matches are still given, and the model is told why.
+const describeTaskSearch = async function ({ user, query, embeddingModel, signal }) {
   const userId = user.id
-  const wordMatches = tasks.searchTasks({ userId, query, includeDone })
+  const wordMatches = tasks.searchTasks({ userId, query, includeDone: true })
 
   let meaningMatches = []
   let meaningProblem = null
@@ -223,7 +222,7 @@ const describeTaskSearch = async function ({ user, query, includeDone, embedding
         userId,
         query,
         model: embeddingModel,
-        includeDone,
+        includeDone: true,
         limit: closeTaskLimit + wordMatches.length,
         signal,
       })
@@ -269,27 +268,23 @@ const describeTaskSearch = async function ({ user, query, includeDone, embedding
 const runFindTasks = async function ({ argumentsText, toolSettings, user, signal }) {
   const args = parseArguments(argumentsText) ?? {}
   const query = typeof args.query === `string` ? args.query.trim() : ``
-  const includeDone = args.include_done === true
 
   if (query !== ``) {
     const embeddingModel = toolSettings.embeddingModel ?? null
-    const content = await describeTaskSearch({ user, query, includeDone, embeddingModel, signal })
+    const content = await describeTaskSearch({ user, query, embeddingModel, signal })
 
     return { content, imageId: null }
   }
 
-  let taskList = tasks.listOpen(user.id)
-
-  if (includeDone) {
-    taskList = [...taskList, ...tasks.listDone(user.id, 20)]
-  }
+  // The open tasks, then the ones done most recently
+  const taskList = [...tasks.listOpen(user.id), ...tasks.listDone(user.id, recentDoneLimit)]
 
   if (taskList.length === 0) {
     return { content: `The to-do list is empty.`, imageId: null }
   }
 
   const listed = taskList.slice(0, maxListedTasks)
-  let content = `The to-do list, soonest due first${includeDone ? `, then the tasks done most recently` : ``}:\n\n${describeTaskList(listed, user.timeZone)}`
+  let content = `The to-do list, soonest due first, then the tasks done most recently:\n\n${describeTaskList(listed, user.timeZone)}`
 
   if (taskList.length > listed.length) {
     content = `${content}\n\n…and ${taskList.length - listed.length} more. Search with a query to find others.`

@@ -199,10 +199,9 @@ export const tools = {
   },
 
   find_tasks: {
-    description: `Look at the user's to-do list: with no query, every open task, soonest due first; with a query, the tasks matching its words or meaning. Use it when the user asks what they have to do, before adding a task that may exist, and to get ids for update_task and complete_task.`,
+    description: `Look at the user's to-do list, open tasks and those done in the last 30 days (a done one shows its done date and note; older ones are deleted): with no query, every open task, soonest due first, then the recently done; with a query, the tasks matching its words or meaning. Use it when the user asks what they have to do or have done, before adding a task that may exist, and to get ids for update_task and complete_task, including a done task to put back on the list.`,
     parameters: {
       query: `Words to look for, e.g. "dentist".`,
-      include_done: `true to include tasks done in the last 30 days; older ones are deleted.`,
     },
   },
 
