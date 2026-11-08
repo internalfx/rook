@@ -23,7 +23,7 @@
     "@tailwindcss/forms": "^0.5.11",
     "cuid": "^3.0.0",
     "dayjs": "^1.11.23",
-    "inquirer": "^9.3.8",
+    "inquirer": "^14.2.5",
     "joi": "17.13.1",
     "koa": "3.0.1",
     "koa-body": "6.0.1",
