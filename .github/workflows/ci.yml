@@ -13,7 +13,7 @@ jobs:
       # Chrome is only needed for the web tools, never at startup
       PUPPETEER_SKIP_DOWNLOAD: "true"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
