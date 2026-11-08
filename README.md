@@ -1,4 +1,4 @@
-# <img src="static/icon-192.png" alt="" width="64" align="center"> ROOK
+# <img src="static/readme.png" alt="" height="38" align="center"> ROOK
 
 *The rook defends the king.*
 
