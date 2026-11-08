@@ -13,7 +13,6 @@ import path from 'node:path'
 import Bun from 'bun'
 import { Database } from 'bun:sqlite'
 import config from '../configure.js'
-import { checkConfig } from '../lib/checkConfig.js'
 
 const testDataDir = path.join(config.dataDir, `test`)
 
@@ -39,7 +38,9 @@ config.env = `development`
 config.isDevelopment = true
 config.isProduction = false
 
-// Before the services read it, as app.js does
+// Before anything reads it, as app.js does. Imported only now: loading lib/checkConfig.js loads
+// lib/images.js, which fixes its folder under dataDir, so it has to come after the change above
+const { checkConfig } = await import(`../lib/checkConfig.js`)
 checkConfig()
 
 // Only now that dataDir points at the copy can anything open the database
