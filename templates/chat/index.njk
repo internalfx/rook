@@ -480,11 +480,11 @@
         <dl class="mt-4 space-y-3 text-sm">
           <div>
             <dt class="text-xs text-gray-500">Chat model</dt>
-            <dd class="break-words">{{ chatModel if chatModel else 'None chosen' }}</dd>
+            <dd class="wrap-break-word">{{ chatModel if chatModel else 'None chosen' }}</dd>
           </div>
           <div>
             <dt class="text-xs text-gray-500">Images</dt>
-            <dd class="break-words">
+            <dd class="wrap-break-word">
               {% if imageModel %}{{ imageModel }} · {{ imageSize | replace('x', '×') }}{% else %}Off{% endif %}
             </dd>
           </div>
@@ -494,7 +494,7 @@
               {% if webDomains.length > 0 %}
                 <ul class="max-h-48 overflow-y-auto">
                   {% for domain in webDomains %}
-                    <li class="break-words">{{ domain }}</li>
+                    <li class="wrap-break-word">{{ domain }}</li>
                   {% endfor %}
                 </ul>
               {% else %}
@@ -508,7 +508,7 @@
           </div>
           <div>
             <dt class="text-xs text-gray-500">Memories</dt>
-            <dd class="break-words">{{ memoriesSummary if memoriesSummary else 'Off' }}</dd>
+            <dd class="wrap-break-word">{{ memoriesSummary if memoriesSummary else 'Off' }}</dd>
           </div>
           <div>
             <dt class="text-xs text-gray-500">Tasks</dt>
@@ -520,7 +520,7 @@
               {% if slackLabels.length > 0 %}
                 <ul class="max-h-48 overflow-y-auto">
                   {% for label in slackLabels %}
-                    <li class="break-words">{{ label }}</li>
+                    <li class="wrap-break-word">{{ label }}</li>
                   {% endfor %}
                 </ul>
               {% else %}
@@ -564,7 +564,7 @@
                     </a>
                   </template>
                 </div>
-                <div x-show="message.content !== ''" class="max-w-[85%] px-4 py-2.5 text-sm rounded-2xl bg-sky-600 text-white whitespace-pre-wrap break-words" x-text="message.content"></div>
+                <div x-show="message.content !== ''" class="max-w-[85%] px-4 py-2.5 text-sm rounded-2xl bg-sky-600 text-white whitespace-pre-wrap wrap-break-word" x-text="message.content"></div>
               </div>
             </template>
 
@@ -603,7 +603,7 @@
                     <a x-show="message.url" :href="message.url" target="_blank" rel="noopener" class="min-w-0 truncate underline hover:text-gray-800"
                       x-text="message.url?.replace(/^https?:\/\//, '')" @click.stop></a>
                   </summary>
-                  <div x-show="!message.pending" class="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap break-words text-gray-700" x-text="message.content"></div>
+                  <div x-show="!message.pending" class="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap wrap-break-word text-gray-700" x-text="message.content"></div>
                 </details>
               </div>
             </template>
@@ -617,7 +617,7 @@
                     <span x-text="message.pending ? 'Searching' : 'Searched'"></span>
                     <span x-show="message.query" class="min-w-0 truncate text-gray-700" x-text="message.query"></span>
                   </summary>
-                  <div x-show="!message.pending" class="markdown mt-2 max-h-80 overflow-y-auto break-words text-gray-700" x-html="renderMarkdown(message.content)"></div>
+                  <div x-show="!message.pending" class="markdown mt-2 max-h-80 overflow-y-auto wrap-break-word text-gray-700" x-html="renderMarkdown(message.content)"></div>
                 </details>
               </div>
             </template>
@@ -632,7 +632,7 @@
                     <span x-show="message.name === 'get_current_time'" x-text="message.pending ? 'Checking the time' : 'Checked the time'"></span>
                     <span x-show="message.name === 'convert_time'" x-text="message.pending ? 'Converting the time' : 'Converted the time'"></span>
                   </summary>
-                  <div x-show="!message.pending" class="mt-2 whitespace-pre-wrap break-words text-gray-700" x-text="message.content"></div>
+                  <div x-show="!message.pending" class="mt-2 whitespace-pre-wrap wrap-break-word text-gray-700" x-text="message.content"></div>
                 </details>
               </div>
             </template>

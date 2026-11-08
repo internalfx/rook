@@ -142,7 +142,7 @@
     {% endif %}
 
     {% if briefing.overview %}
-      <div class="markdown px-4 py-3 text-sm break-words" x-html="$markdown($el.dataset.text)" data-text="{{ briefing.overview }}">{{ briefing.overview }}</div>
+      <div class="markdown px-4 py-3 text-sm wrap-break-word" x-html="$markdown($el.dataset.text)" data-text="{{ briefing.overview }}">{{ briefing.overview }}</div>
 
       {# Opens a new chat with the overview as the model's first message #}
       <form method="post" action="/briefing/{{ briefing.id }}/discuss" class="px-4 pb-3">

@@ -81,7 +81,7 @@
 {% macro fact(label, value) %}
   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2">
     <dt class="w-40 shrink-0 text-xs text-gray-500">{{ label }}</dt>
-    <dd class="flex-1 min-w-0 text-sm break-words">{{ value }}</dd>
+    <dd class="flex-1 min-w-0 text-sm wrap-break-word">{{ value }}</dd>
   </div>
 {% endmacro %}
 
@@ -141,7 +141,7 @@
               {% for model in loadedModels %}
                 <li class="px-4 py-3">
                   <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span class="text-sm font-medium break-words">{{ model.name }}</span>
+                    <span class="text-sm font-medium wrap-break-word">{{ model.name }}</span>
                     <span class="px-2 py-0.5 text-xs rounded-full {% if model.state == 'ready' or model.state == 'loaded' %}bg-green-100 text-green-800{% elif model.state == 'busy' or model.state == 'streaming' %}bg-sky-100 text-sky-800{% else %}bg-gray-100 text-gray-700{% endif %}">{{ model.state }}</span>
                   </div>
                   <p class="mt-1 text-xs text-gray-500">
@@ -268,7 +268,7 @@
               {% for model in listedModels %}
                 <li class="px-4 py-3">
                   <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span class="text-sm font-medium break-words">{{ model.id }}</span>
+                    <span class="text-sm font-medium wrap-break-word">{{ model.id }}</span>
                     {% for role in model.roles %}
                       <span class="px-2 py-0.5 text-xs font-bold rounded-full bg-sky-100 text-sky-800">{{ role }}</span>
                     {% endfor %}

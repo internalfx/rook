@@ -5,10 +5,10 @@
     <div class="max-w-[85%] px-4 py-2.5 text-sm rounded-2xl bg-white text-gray-900 shadow-sm">
       <details x-show="message.reasoning !== ''" class="text-xs text-gray-500" :class="{ 'mb-2': message.content !== '' }">
         <summary class="cursor-pointer select-none">Thinking</summary>
-        <div class="mt-1 whitespace-pre-wrap break-words" x-text="message.reasoning"></div>
+        <div class="mt-1 whitespace-pre-wrap wrap-break-word" x-text="message.reasoning"></div>
       </details>
 
-      <div x-show="message.content !== ''" class="markdown break-words" x-html="renderMarkdown(message.content)"></div>
+      <div x-show="message.content !== ''" class="markdown wrap-break-word" x-html="renderMarkdown(message.content)"></div>
     </div>
   </div>
 </template>
@@ -19,7 +19,7 @@
     <div class="max-w-[85%] min-w-0 flex items-start gap-2 px-4 py-2.5 text-xs text-gray-500 bg-white rounded-2xl shadow-sm">
       <span class="inline-block size-4 shrink-0 bg-current" :class="resultRowIcon(message)" aria-hidden="true"></span>
       <span class="shrink-0" x-text="resultRowLabel(message)"></span>
-      <span x-show="!message.pending" class="min-w-0 break-words text-gray-700" x-text="message.content"></span>
+      <span x-show="!message.pending" class="min-w-0 wrap-break-word text-gray-700" x-text="message.content"></span>
     </div>
   </div>
 </template>
@@ -34,7 +34,7 @@
         <span class="shrink-0" x-text="toolRowLabel(message)"></span>
         <span x-show="toolRowText(message)" class="min-w-0 truncate text-gray-700" x-text="toolRowText(message)"></span>
       </summary>
-      <div x-show="!message.pending" class="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap break-words text-gray-700" x-text="message.content"></div>
+      <div x-show="!message.pending" class="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap wrap-break-word text-gray-700" x-text="message.content"></div>
     </details>
   </div>
 </template>

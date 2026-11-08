@@ -210,7 +210,7 @@
                     x-show="filter === '' || $el.dataset.label.toLowerCase().includes(filter.toLowerCase())">
                     <input type="checkbox" name="slackChannels" value="{{ conversation.id }}" class="size-4 shrink-0 accent-sky-600"
                       {% if conversation.picked %}checked{% endif %}>
-                    <span class="min-w-0 text-sm break-words">{{ conversation.label }}</span>
+                    <span class="min-w-0 text-sm wrap-break-word">{{ conversation.label }}</span>
                     {% if conversation.kind == 'private' %}<span class="text-xs text-gray-500">private</span>{% endif %}
                   </label>
                 {% endfor %}
