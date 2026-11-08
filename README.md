@@ -2,11 +2,21 @@
 
 [![CI](https://github.com/internalfx/rook/actions/workflows/ci.yml/badge.svg)](https://github.com/internalfx/rook/actions/workflows/ci.yml)
 
-A planner and personal assistant that runs on your own models.
+**A personal assistant that lives on your hardware, runs on your models, and keeps your life in a file you own.**
 
-ROOK is a small web app you run on a machine at home or in the office. Each user chats with a model that has tools: it keeps memories, manages a task list, reads web pages on sites you allow, searches the web, does arithmetic and date sums, and can read a user's Slack conversations. On a schedule it writes each user a briefing, an overview of what's going on with their memories, tasks, recent chats and Slack, and it can push notifications to their phone through [ntfy](https://ntfy.sh). Every user's data is their own, in one SQLite file.
+ROOK remembers what you tell it, keeps your task list, reads your Slack, and checks in on you. Every few hours it looks over everything and writes you a briefing. It tidies up stale memories, marks off tasks your chats show are done, and adds the ones you mentioned in passing. When something matters later, like a deadline or a meeting, it schedules a push to your phone. Right before sending, it checks the reminder is still true.
 
-The models run on a [Lemonade](https://lemonade-server.ai) server, locally or on another machine you control. Nothing leaves your network unless a tool is asked to fetch a web page or search.
+All of it runs on a machine you control. The models run on your own [Lemonade](https://lemonade-server.ai) server, and each user's data sits in one SQLite file. **Nothing leaves your network** unless you've told ROOK it may search the web or read a site you've allowed.
+
+- **Memories** it saves and finds by meaning, with the important ones pinned to every chat
+- **Tasks** it adds, finds, updates and completes as you talk
+- **Briefings** on a schedule, written from your memories, tasks, recent chats and Slack
+- **Phone notifications** through [ntfy](https://ntfy.sh), checked by the model before they go out
+- **Slack, read-only**, through each user's own token, so it only sees what they can
+- **Web pages and search** on the sites you allow, plus arithmetic, dates and image generation
+- **Multiple users**, each with their own data, on one install
+
+No subscription, no cloud account, no one else's servers. Clone it, point it at your models, and it's yours.
 
 | A chat, with the tools it used | A scheduled briefing |
 |---|---|

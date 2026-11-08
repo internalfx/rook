@@ -63,6 +63,33 @@ koa.use(midSession)
 koa.use(midHelpers)
 koa.use(midAuth)
 
+// Login attempts from one address are limited far more tightly than the rest: ten a minute, which
+// no one typing a password reaches but a guesser does at once. Over the limit, the login page says
+// so instead of taking the attempt. After the session and helpers, so it can flash the message.
+const loginRatelimitDB = new Map()
+
+const loginLimit = ratelimit({
+  driver: `memory`,
+  db: loginRatelimitDB,
+  duration: 60000,
+  max: 10,
+  id: (ctx) => ctx.ip,
+  disableHeader: true,
+})
+
+koa.use(async function (ctx, next) {
+  if (ctx.method !== `POST` || ctx.path !== `/auth/login`) {
+    return next()
+  }
+
+  await loginLimit(ctx, next)
+
+  if (ctx.status === 429) {
+    ctx.addFlash(`Too many login attempts from this address. Wait a minute and try again.`, `error`)
+    ctx.redirect(`/auth/login`)
+  }
+})
+
 const dataRouteList = collapse(await importDirectory(config.routesDir, /(.+)\.js$/))
 
 for (let [path, filePath] of Object.entries(dataRouteList)) {

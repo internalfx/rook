@@ -15,6 +15,8 @@ versions follow [Semantic Versioning](https://semver.org).
   and notifications, or replaces or removes them
 - Discuss buttons on memories and notifications, opening a chat about one as tasks already had
 - Screenshots in the README
+- Login attempts are limited to ten a minute from one address; the rest of the app keeps its
+  broad limit
 - The stylesheet is built on every start, so a fresh clone or a pulled update needs no
   `bun run css`
 
