@@ -3,7 +3,7 @@
 {% block body %}
   <div class="max-w-3xl xl:max-w-6xl">
     <h1 class="text-2xl font-bold">Notifications</h1>
-    <p class="mt-1 mb-6 text-sm text-gray-500">What briefings and chats thought you should know about, when it matters.</p>
+    <p class="mt-1 mb-6 text-sm text-gray-500">What briefings and chats thought you should know about, when it matters. Discuss opens a chat about one.</p>
 
     <div class="space-y-6">
       {% if not isPushOn %}
@@ -57,6 +57,13 @@
                     {% if scheduled.delays > 0 %}
                       <span>Delayed: {{ scheduled.note }}</span>
                     {% endif %}
+
+                    <span class="flex-1"></span>
+
+                    {# Opens a new chat about the scheduled notification, where the model can change or cancel it #}
+                    <form method="post" action="/notifications/scheduled/{{ scheduled.id }}/discuss">
+                      <button type="submit" class="px-2 py-1 rounded hover:bg-sky-50 hover:text-sky-600">Discuss</button>
+                    </form>
                   </div>
                 </li>
               {% endfor %}
@@ -110,6 +117,10 @@
 
                       <span class="flex-1"></span>
 
+                      {# Opens a new chat with the notification as the model's first message #}
+                      <form method="post" action="/notifications/{{ notification.id }}/discuss">
+                        <button type="submit" class="px-2 py-1 rounded hover:bg-sky-50 hover:text-sky-600">Discuss</button>
+                      </form>
                       <form method="post" action="/notifications/{{ notification.id }}/delete">
                         <button type="submit" class="px-2 py-1 rounded hover:bg-red-50 hover:text-red-600">Delete</button>
                       </form>

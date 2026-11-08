@@ -24,6 +24,11 @@
           <span class="flex-1"></span>
 
           <div x-show="!confirmDelete" class="flex items-center gap-1">
+            {# Opens a new chat with the memory as the model's first message #}
+            <form method="post" action="/memories/{{ memory.id }}/discuss">
+              <input type="hidden" name="returnTo" value="{{ returnTo }}">
+              <button type="submit" class="px-2 py-1 rounded hover:bg-sky-50 hover:text-sky-600">Discuss</button>
+            </form>
             <button type="button" class="px-2 py-1 rounded hover:bg-gray-100 hover:text-gray-800" @click="editing = true; $nextTick(() => $refs.content.focus())">Edit</button>
             <button type="button" class="px-2 py-1 rounded hover:bg-red-50 hover:text-red-600" @click="confirmDelete = true">Delete</button>
           </div>
@@ -59,7 +64,7 @@
   {% endmacro %}
 
   <h1 class="text-2xl font-bold">Memories</h1>
-  <p class="mt-1 mb-6 text-sm text-gray-500">What Rook remembers for every chat. It saves, changes and deletes them as you talk, and you can too.</p>
+  <p class="mt-1 mb-6 text-sm text-gray-500">What Rook remembers for every chat. It saves, changes and deletes them as you talk, and you can too. Discuss opens a chat about one.</p>
 
   <div class="max-w-3xl space-y-6">
     {% if not isMemoriesOn %}

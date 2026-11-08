@@ -1,7 +1,8 @@
 # One grouped pull request a month for package updates, and one for the actions CI uses
 version: 2
 updates:
-  - package-ecosystem: npm
+  # The packages are locked by bun.lock, which the npm updater can't read
+  - package-ecosystem: bun
     directory: /
     schedule:
       interval: monthly

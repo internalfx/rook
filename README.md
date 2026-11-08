@@ -8,6 +8,12 @@ ROOK is a small web app you run on a machine at home or in the office. Each user
 
 The models run on a [Lemonade](https://lemonade-server.ai) server, locally or on another machine you control. Nothing leaves your network unless a tool is asked to fetch a web page or search.
 
+| A chat, with the tools it used | A scheduled briefing |
+|---|---|
+| ![A chat where the model searched the tasks and added one](assets/screenshots/chat.png) | ![The Briefing page with the morning's overview](assets/screenshots/briefing.png) |
+| **Tasks** | **Memories** |
+| ![The Tasks page with overdue and due-today tasks](assets/screenshots/tasks.png) | ![The Memories page with pinned and searchable memories](assets/screenshots/memories.png) |
+
 ## Requirements
 
 - [Bun](https://bun.sh) 1.2 or newer. ROOK uses Bun's SQLite and password hashing, so Node won't run it.

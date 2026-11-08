@@ -1,6 +1,7 @@
 import chats from '../../../lib/chats.js'
 import tasks from '../../../lib/tasks.js'
 import { readReturnTo, toPageTask } from '../../../lib/taskForm.js'
+import { quoteMarkdown } from '../../../lib/format.js'
 
 // The model's first message in a chat about `task`: its title, priority and due date as the
 // Tasks page words them (in `zone`, the user's time zone), and its notes, then a question for
@@ -30,11 +31,7 @@ const describeTaskStart = function (task, zone) {
   }
 
   if (task.notes !== ``) {
-    const quoted = task.notes.split(`\n`).map(function (line) {
-      return `> ${line}`
-    })
-
-    parts.push(quoted.join(`\n`))
+    parts.push(quoteMarkdown(task.notes))
   }
 
   parts.push(`What would you like to discuss?`)

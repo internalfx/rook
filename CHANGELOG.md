@@ -13,6 +13,8 @@ versions follow [Semantic Versioning](https://semver.org).
 - A bug report form, SECURITY.md, and THIRD_PARTY_NOTICES.md
 - `bun scripts/demo.js`, which adds a demo user with made-up chats, memories, tasks, a briefing
   and notifications, or replaces or removes them
+- Discuss buttons on memories and notifications, opening a chat about one as tasks already had
+- Screenshots in the README
 - The stylesheet is built on every start, so a fresh clone or a pulled update needs no
   `bun run css`
 
