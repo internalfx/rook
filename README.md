@@ -1,5 +1,7 @@
 # ROOK
 
+*The rook defends the king.*
+
 [![CI](https://github.com/internalfx/rook/actions/workflows/ci.yml/badge.svg)](https://github.com/internalfx/rook/actions/workflows/ci.yml)
 
 **A personal assistant that lives on your hardware, runs on your models, and keeps your life in a file you own.**
