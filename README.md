@@ -1,4 +1,4 @@
-# ROOK
+# <img src="static/favicon.svg" alt="" width="40" align="center"> ROOK
 
 *The rook defends the king.*
 
