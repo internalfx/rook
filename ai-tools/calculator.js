@@ -1,5 +1,5 @@
 import dayjs from 'dayjs'
-import tasks from '../services/tasks.js'
+import tasks from '../lib/tasks.js'
 
 // Exact arithmetic and date sums for the model: the calculate, days_between, add_to_date and
 // find_weekday tools (see math.js), since small models often get these wrong in their

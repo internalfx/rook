@@ -1,14 +1,14 @@
-import joi from '../../services/joi.js'
-import lemonade from '../../services/lemonade.js'
-import chats from '../../services/chats.js'
-import images from '../../services/images.js'
+import joi from '../../lib/joi.js'
+import lemonade from '../../lib/lemonade.js'
+import chats from '../../lib/chats.js'
+import images from '../../lib/images.js'
 import tools from '../../ai-tools/index.js'
-import runs from '../../services/runs.js'
-import { readModelReply } from '../../services/modelStream.js'
+import runs from '../../lib/runs.js'
+import { readModelReply } from '../../lib/modelStream.js'
 import { watchRunResponse } from '../../lib/watchRunResponse.js'
 import { maxCallsPerTool, maxRounds, describeCallLimit } from '../../ai-tools/limits.js'
 import config from '../../configure.js'
-import prompts from '../../prompts.js'
+import prompts from '../../lib/prompts.js'
 
 // Every round of a reply offers the same tools (changing them would change the prompt); see
 // ai-tools/limits.js for how many calls and rounds it gets.
@@ -230,7 +230,7 @@ const runToolCalls = async function ({ toolCalls, user, chat, chatTools, history
 }
 
 // Runs the model's replies as rook's own events, sent through `run` to whoever is watching (see
-// services/runs.js), and saves each message as it completes:
+// lib/runs.js), and saves each message as it completes:
 //   { type: "assistant" }                                 a new reply from the model begins
 //   { type: "reasoning" | "content", text }               more of that reply
 //   { type: "toolCall", toolCallId, name, prompt, url, query, memory, taskTitle, channel }  the model asked for a tool

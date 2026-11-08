@@ -1,4 +1,4 @@
-import notifications from '../../../services/notifications.js'
+import notifications from '../../../lib/notifications.js'
 
 // Form POST from a notification's Delete button
 export const POST = async function (ctx) {

@@ -1,7 +1,7 @@
 
 import Bun from 'bun'
-import joi from '../../services/joi.js'
-import users from '../../services/users.js'
+import joi from '../../lib/joi.js'
+import users from '../../lib/users.js'
 
 // Checked when there's no user with the email given, so the time taken doesn't say which emails
 // have accounts

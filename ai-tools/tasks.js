@@ -1,18 +1,18 @@
 import config from '../configure.js'
-import tasks from '../services/tasks.js'
+import tasks from '../lib/tasks.js'
 import { getEmbeddingModel } from './memories.js'
 import { parseArguments } from './arguments.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
 // add_task, find_tasks, update_task and complete_task: the user's to-do list (see
-// services/tasks.js)
+// lib/tasks.js)
 
 // Tasks are on unless switched off in config.js
 export const isTasksOn = function () {
   return config.tools?.tasks !== false
 }
 
-// The descriptions are in prompts.js
+// The descriptions are in lib/prompts.js
 const addTaskTool = {
   type: `function`,
   function: {

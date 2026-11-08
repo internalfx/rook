@@ -1,4 +1,4 @@
-import memories from '../../../services/memories.js'
+import memories from '../../../lib/memories.js'
 
 // Form POST from a memory's Delete confirmation on the memories page. `returnTo` is the page it
 // was deleted on, so a search stays open: /memories, or /memories with its ?q=.

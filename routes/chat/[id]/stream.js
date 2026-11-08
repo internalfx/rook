@@ -1,5 +1,5 @@
-import chats from '../../../services/chats.js'
-import runs from '../../../services/runs.js'
+import chats from '../../../lib/chats.js'
+import runs from '../../../lib/runs.js'
 import { watchRunResponse } from '../../../lib/watchRunResponse.js'
 
 // Watches the chat's reply in progress, for a page opened (or come back to) while it's still

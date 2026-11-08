@@ -1,19 +1,19 @@
-import lemonade from './lemonade.js'
+import lemonade from '../lib/lemonade.js'
 import config from '../configure.js'
-import chats from './chats.js'
-import notifications from './notifications.js'
-import users from './users.js'
+import chats from '../lib/chats.js'
+import notifications from '../lib/notifications.js'
+import users from '../lib/users.js'
 import tools from '../ai-tools/index.js'
 import { parseArguments } from '../ai-tools/arguments.js'
-import { readModelReply } from './modelStream.js'
+import { readModelReply } from '../lib/modelStream.js'
 import { maxCallsPerTool, describeCallLimit } from '../ai-tools/limits.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
-// Sends the scheduled notifications that are due (see services/notifications.js). Just before
+// Sends the scheduled notifications that are due (see lib/notifications.js). Just before
 // each goes out, the chat model checks it's still right: it's told only the notification, why
 // it was scheduled and what to check, with tools that can look things up but not change them.
 // It sends it (reworded if things have changed), delays it, or skips it. Kept apart from
-// services/notifications.js, which the tools load, because this loads the tools.
+// lib/notifications.js, which the tools load, because this loads the tools.
 
 // One more than this late (the server was down when it was due) is missed, not checked
 const maxLateness = 1000 * 60 * 60
@@ -44,7 +44,7 @@ const lookupToolNames = [
 const chatMessageLimit = 6
 const chatMessageCharLimit = 300
 
-// The decisions; the first one the model calls ends the check. The descriptions are in prompts.js.
+// The decisions; the first one the model calls ends the check. The descriptions are in lib/prompts.js.
 const sendNotificationTool = {
   type: `function`,
   function: {

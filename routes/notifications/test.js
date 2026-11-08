@@ -1,5 +1,5 @@
-import joi from '../../services/joi.js'
-import notifications from '../../services/notifications.js'
+import joi from '../../lib/joi.js'
+import notifications from '../../lib/notifications.js'
 
 // From the Settings page's "Send a test" button, as JSON { url, token }: pushes a test notification
 // to what's typed there, saved or not, and answers { ok, error }

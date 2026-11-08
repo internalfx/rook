@@ -1,4 +1,4 @@
-import tasks from '../../services/tasks.js'
+import tasks from '../../lib/tasks.js'
 import tools from '../../ai-tools/index.js'
 import { readTaskForm, toPageTask } from '../../lib/taskForm.js'
 

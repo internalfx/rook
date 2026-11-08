@@ -1,6 +1,6 @@
 
-import chats from '../../../services/chats.js'
-import runs from '../../../services/runs.js'
+import chats from '../../../lib/chats.js'
+import runs from '../../../lib/runs.js'
 
 // Form POST from the chat list. `returnTo` is the page to go back to, unless that page
 // is the chat being deleted, in which case the browser lands on a new chat.

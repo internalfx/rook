@@ -43,8 +43,8 @@ config.isProduction = false
 checkConfig()
 
 // Only now that dataDir points at the copy can anything open the database
-const { default: db } = await import(`../services/db.js`)
-const { default: users } = await import(`../services/users.js`)
+const { default: db } = await import(`../lib/db.js`)
+const { default: users } = await import(`../lib/users.js`)
 
 // The test logins: user 1 (set up from config.owner, with a copy of their data) becomes
 // test@rook.local, and test2@rook.local is added with nothing. None of the real logins carry

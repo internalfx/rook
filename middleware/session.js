@@ -1,6 +1,6 @@
 import _ from 'lodash'
 import config from '../configure.js'
-import db from '../services/db.js'
+import db from '../lib/db.js'
 import { uniqueId } from '../lib/utils.js'
 
 const cookieName = config.session.sessionCookieName

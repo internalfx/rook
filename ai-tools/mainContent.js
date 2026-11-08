@@ -1,5 +1,5 @@
 import domino from '@mixmark-io/domino'
-import lemonade from '../services/lemonade.js'
+import lemonade from '../lib/lemonade.js'
 
 // Finds a web page's main content with a MinerU-HTML model, for read_web_page (see
 // webReader.js). This is MinerU-HTML v1.1's own method (github.com/opendatalab/MinerU-HTML,

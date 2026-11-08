@@ -8,7 +8,7 @@
 // logged out; a user whose password was reset stays logged in.
 
 import inquirer from 'inquirer'
-import users from '../services/users.js'
+import users from '../lib/users.js'
 
 const askPassword = async function () {
   const answers = await inquirer.prompt([

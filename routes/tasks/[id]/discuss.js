@@ -1,5 +1,5 @@
-import chats from '../../../services/chats.js'
-import tasks from '../../../services/tasks.js'
+import chats from '../../../lib/chats.js'
+import tasks from '../../../lib/tasks.js'
 import { readReturnTo, toPageTask } from '../../../lib/taskForm.js'
 
 // The model's first message in a chat about `task`: its title, priority and due date as the

@@ -1,9 +1,9 @@
 import crypto from 'node:crypto'
-import lemonade from '../services/lemonade.js'
-import images from '../services/images.js'
+import lemonade from '../lib/lemonade.js'
+import images from '../lib/images.js'
 import config from '../configure.js'
 import { readImagePrompt } from './arguments.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
 // generate_image: makes a picture with the image model in config.js, and shows it in the chat
 

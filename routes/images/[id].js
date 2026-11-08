@@ -1,6 +1,6 @@
 
-import chats from '../../services/chats.js'
-import images from '../../services/images.js'
+import chats from '../../lib/chats.js'
+import images from '../../lib/images.js'
 import { serveFile } from '../../lib/serveFile.js'
 
 // Images generated in the user's chats, and those they attached. Another user's reads as none.

@@ -1,5 +1,5 @@
-import joi from '../../services/joi.js'
-import users from '../../services/users.js'
+import joi from '../../lib/joi.js'
+import users from '../../lib/users.js'
 
 // The Change password page, its own page so Settings has no password box for browsers to offer
 // to save. The current password is asked for, so a browser left logged in can't change it. Other

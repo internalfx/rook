@@ -1,14 +1,14 @@
 import dayjs from 'dayjs'
-import notifications from '../services/notifications.js'
+import notifications from '../lib/notifications.js'
 import { readTime, checkClockChange } from './time.js'
 import { parseArguments } from './arguments.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
 // schedule_notification, list_scheduled_notifications and cancel_notification: notifications to
-// the user's phone at a later time, from a chat or a briefing (see services/notifications.js).
+// the user's phone at a later time, from a chat or a briefing (see lib/notifications.js).
 // Just before each is due, the model checks it (services/notificationChecks.js).
 
-// The descriptions are in prompts.js
+// The descriptions are in lib/prompts.js
 const scheduleNotificationTool = {
   type: `function`,
   function: {

@@ -1,6 +1,6 @@
 import calculator from './calculator.js'
 import { parseArguments } from './arguments.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
 // calculate, days_between, add_to_date and find_weekday: sums and dates worked out exactly, by
 // calculator.js

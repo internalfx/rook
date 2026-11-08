@@ -4,7 +4,7 @@
 //   bun scripts/models.js
 
 import config from '../configure.js'
-import lemonade from '../services/lemonade.js'
+import lemonade from '../lib/lemonade.js'
 import { formatContextLength } from '../lib/format.js'
 
 let models = []

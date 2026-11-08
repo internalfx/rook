@@ -1,29 +1,29 @@
 import cuid from 'cuid'
-import db from './db.js'
-import lemonade from './lemonade.js'
+import db from '../lib/db.js'
+import lemonade from '../lib/lemonade.js'
 import config from '../configure.js'
-import settings from './settings.js'
+import settings from '../lib/settings.js'
 import tools from '../ai-tools/index.js'
-import memories from './memories.js'
-import chats from './chats.js'
-import tasks from './tasks.js'
-import runs from './runs.js'
-import { readModelReply } from './modelStream.js'
-import notifications from './notifications.js'
-import slack from './slack.js'
-import users from './users.js'
+import memories from '../lib/memories.js'
+import chats from '../lib/chats.js'
+import tasks from '../lib/tasks.js'
+import runs from '../lib/runs.js'
+import { readModelReply } from '../lib/modelStream.js'
+import notifications from '../lib/notifications.js'
+import slack from '../lib/slack.js'
+import users from '../lib/users.js'
 import { maxCallsPerTool, maxRounds, describeCallLimit } from '../ai-tools/limits.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
 // A briefing runs the chat model in the background for one user, with no one watching: it looks
 // over their memories, tasks, recent chats and the Slack conversations they picked in Settings,
 // tidies the memories and tasks, and writes them a short overview. Discuss on the Briefing page
 // starts a chat with that overview as the model's first message. For something that matters now,
-// it can notify the user (services/notifications.js), or schedule a notification for when it will
+// it can notify the user (lib/notifications.js), or schedule a notification for when it will
 // matter. Briefings run on a schedule set in config.js, for every user (see runIfDue), or when a
 // user asks for one.
 //
-// Running briefings live in memory, like chat replies (services/runs.js), so restarting the
+// Running briefings live in memory, like chat replies (lib/runs.js), so restarting the
 // server ends them.
 
 // How many notifications one briefing can send
@@ -102,7 +102,7 @@ const selectLastFinishedAt = db.query(`
 failStaleBriefings.run({ error: `The server restarted during the briefing.`, now: new Date().toISOString() })
 
 // The briefings running now, by user id, each as { id, user, abort, run, finished }. `run` is
-// what the Briefing page watches (see services/runs.js); `finished` settles once it's saved.
+// what the Briefing page watches (see lib/runs.js); `finished` settles once it's saved.
 const running = new Map()
 
 // What a cancelled briefing's error says, after "This briefing didn't finish:"

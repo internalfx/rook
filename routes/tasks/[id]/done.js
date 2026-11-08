@@ -1,5 +1,5 @@
-import joi from '../../../services/joi.js'
-import tasks from '../../../services/tasks.js'
+import joi from '../../../lib/joi.js'
+import tasks from '../../../lib/tasks.js'
 import { readReturnTo } from '../../../lib/taskForm.js'
 
 // Form POST from an open task's completion form, with `done` true and an optional completion

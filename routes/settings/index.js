@@ -1,10 +1,10 @@
 
-import joi from '../../services/joi.js'
-import settings from '../../services/settings.js'
+import joi from '../../lib/joi.js'
+import settings from '../../lib/settings.js'
 import tools from '../../ai-tools/index.js'
-import notifications from '../../services/notifications.js'
-import slack from '../../services/slack.js'
-import users from '../../services/users.js'
+import notifications from '../../lib/notifications.js'
+import slack from '../../lib/slack.js'
+import users from '../../lib/users.js'
 
 // Settings holds what's each user's own: their time zone, where their notifications are pushed,
 // their Slack token and which Slack conversations are read, and their password

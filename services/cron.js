@@ -1,7 +1,7 @@
 import cron from 'node-cron'
 import briefings from './briefings.js'
 import notificationChecks from './notificationChecks.js'
-import tasks from './tasks.js'
+import doneTasks from './doneTasks.js'
 
 // Scheduled jobs, keyed by name
 const jobs = {}
@@ -22,10 +22,10 @@ jobs.notifications = cron.schedule(`* * * * *`, function () {
   })
 })
 
-// On the hour, deletes the tasks done more than tasks.doneKeptDays ago
+// On the hour, deletes the tasks done more than doneKeptDays (lib/tasks.js) ago
 jobs.doneTasks = cron.schedule(`0 * * * *`, function () {
   try {
-    tasks.deleteOldDone()
+    doneTasks.deleteOldDone()
   } catch (err) {
     console.error(`Deleting old done tasks failed`, err)
   }

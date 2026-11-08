@@ -1,4 +1,4 @@
-import chats from '../../../services/chats.js'
+import chats from '../../../lib/chats.js'
 import briefings from '../../../services/briefings.js'
 
 // Form POST from a briefing's Discuss button: opens a new chat where the briefing's overview is

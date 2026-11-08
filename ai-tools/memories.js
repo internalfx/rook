@@ -1,10 +1,10 @@
 import config from '../configure.js'
-import memories from '../services/memories.js'
+import memories from '../lib/memories.js'
 import { parseArguments, readSearchQuery } from './arguments.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
 // save_memory, search_memories, update_memory and delete_memory: what the model remembers about
-// the user (see services/memories.js). Pinned memories are given to it at the start of every chat
+// the user (see lib/memories.js). Pinned memories are given to it at the start of every chat
 // (buildMemoriesMessage); the rest it searches for by meaning.
 
 // The model memories are searched with, from config.js; they can't be searched without one
@@ -17,7 +17,7 @@ export const isMemoriesOn = function () {
   return config.tools?.memories === true && getEmbeddingModel() != null
 }
 
-// The descriptions are in prompts.js
+// The descriptions are in lib/prompts.js
 const saveMemoryTool = {
   type: `function`,
   function: {

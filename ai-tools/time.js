@@ -1,9 +1,9 @@
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
-import tasks from '../services/tasks.js'
+import tasks from '../lib/tasks.js'
 import { parseArguments } from './arguments.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
 // get_current_time: the date and time now, which the model can't know otherwise. convert_time:
 // a time in other time zones, which the model gets wrong when it works out offsets itself.
@@ -12,7 +12,7 @@ import prompts from '../prompts.js'
 dayjs.extend(utc)
 dayjs.extend(timezone)
 
-// The descriptions are in prompts.js
+// The descriptions are in lib/prompts.js
 
 // Models only know the date their training ended, so they're given a way to ask
 const currentTimeTool = {

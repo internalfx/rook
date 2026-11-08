@@ -1,9 +1,9 @@
 import config from '../configure.js'
-import lemonade from '../services/lemonade.js'
+import lemonade from '../lib/lemonade.js'
 import webReader from './webReader.js'
 import { extrasFor } from './sites.js'
 import { readToolUrl } from './arguments.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
 // read_web_page: reads a page on one of the sites listed in config.js, as Markdown (see
 // webReader.js and sites.js)

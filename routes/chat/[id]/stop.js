@@ -1,5 +1,5 @@
-import chats from '../../../services/chats.js'
-import runs from '../../../services/runs.js'
+import chats from '../../../lib/chats.js'
+import runs from '../../../lib/runs.js'
 
 // The Stop button. A reply keeps running when the page is left, so stopping it is a request
 // of its own. Only the chat's own user can stop it.

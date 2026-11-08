@@ -3,7 +3,7 @@ import duckduckgo from './duckduckgo.js'
 import { matchDomain } from './sites.js'
 import { getReadableDomains } from './webPages.js'
 import { readSearchQuery } from './arguments.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
 // web_search: searches DuckDuckGo (see duckduckgo.js), and marks the results read_web_page can
 // open

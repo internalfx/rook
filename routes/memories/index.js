@@ -1,5 +1,5 @@
-import joi from '../../services/joi.js'
-import memories from '../../services/memories.js'
+import joi from '../../lib/joi.js'
+import memories from '../../lib/memories.js'
 import tools from '../../ai-tools/index.js'
 
 // How many memories a search shows, closest first, and how long it may take: the first search

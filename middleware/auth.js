@@ -1,4 +1,4 @@
-import users from '../services/users.js'
+import users from '../lib/users.js'
 
 // A page marked secure needs a logged-in user: the one whose id the session holds (see
 // routes/auth/login.js). A user deleted since they logged in counts as logged out. A page marked

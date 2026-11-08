@@ -1,13 +1,13 @@
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
 import timezone from 'dayjs/plugin/timezone'
-import settings from '../services/settings.js'
-import slack from '../services/slack.js'
+import settings from '../lib/settings.js'
+import slack from '../lib/slack.js'
 import { parseArguments, readSearchQuery } from './arguments.js'
-import prompts from '../prompts.js'
+import prompts from '../lib/prompts.js'
 
 // read_slack and search_slack: read the Slack conversations the user picked in Settings, and only
-// those, with their own Slack token (see services/slack.js). Briefings use them too.
+// those, with their own Slack token (see lib/slack.js). Briefings use them too.
 
 // What read_slack gives the model at most: the newest messages, and the replies to the newest
 // threads among them
