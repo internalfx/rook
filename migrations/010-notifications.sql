@@ -1,5 +1,5 @@
 -- Notifications the model sent the owner (briefings only, for now), kept in rook and pushed to
--- their phone through ntfy when it's set up in Settings (see services/notifications.js)
+-- their phone through ntfy when it's set up in Settings (see lib/notifications.js)
 
 CREATE TABLE notifications (
   id TEXT PRIMARY KEY,

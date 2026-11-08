@@ -8,7 +8,7 @@ CREATE TABLE memories (
   pinned INTEGER NOT NULL DEFAULT 0,
   -- The chat it was saved in, if the model saved it; kept when that chat is deleted
   chatId TEXT REFERENCES chats (id) ON DELETE SET NULL,
-  -- content as a vector of float32s; null until it's embedded (see services/memories.js)
+  -- content as a vector of float32s; null until it's embedded (see lib/memories.js)
   embedding BLOB,
   -- The model that made `embedding`. Vectors from different models can't be compared, so a
   -- memory whose model isn't the one in Settings is embedded again before the next search.

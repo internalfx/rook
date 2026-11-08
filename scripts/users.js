@@ -20,8 +20,8 @@ const askPassword = async function () {
     throw new Error(`The passwords don't match.`)
   }
 
-  if (answers.password.length === 0) {
-    throw new Error(`The password can't be empty.`)
+  if (answers.password.length < 10) {
+    throw new Error(`The password needs at least 10 characters.`)
   }
 
   return answers.password
@@ -62,11 +62,24 @@ const listUsers = function () {
 }
 
 const addUser = async function () {
-  const answers = await inquirer.prompt([
+  // The first account is the admin's: there'd be no one else to make it one
+  const isFirst = users.listUsers().length === 0
+
+  if (isFirst) {
+    console.log(`There are no users yet, so this one will be an admin.`)
+  }
+
+  const questions = [
     { type: `input`, name: `name`, message: `Name:` },
     { type: `input`, name: `email`, message: `Email:` },
-    { type: `confirm`, name: `isAdmin`, message: `Admin?`, default: false },
-  ])
+  ]
+
+  if (isFirst === false) {
+    questions.push({ type: `confirm`, name: `isAdmin`, message: `Admin?`, default: false })
+  }
+
+  const answers = await inquirer.prompt(questions)
+  const isAdmin = isFirst || answers.isAdmin
 
   const name = answers.name.trim()
   const email = answers.email.trim()
@@ -80,7 +93,7 @@ const addUser = async function () {
   }
 
   const password = await askPassword()
-  const user = await users.createUser({ name, email, password, isAdmin: answers.isAdmin })
+  const user = await users.createUser({ name, email, password, isAdmin })
 
   console.log(`Added ${user.name} <${user.email}>${user.isAdmin ? ` as an admin` : ``}. They log in with that email and password.`)
 }

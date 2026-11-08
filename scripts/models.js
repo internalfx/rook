@@ -4,8 +4,12 @@
 //   bun scripts/models.js
 
 import config from '../configure.js'
+import { checkConfig } from '../lib/checkConfig.js'
 import lemonade from '../lib/lemonade.js'
 import { formatContextLength } from '../lib/format.js'
+
+// Fills in and checks config.js, as the server does, so lemonade.host is there
+checkConfig()
 
 let models = []
 

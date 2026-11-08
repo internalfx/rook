@@ -1,0 +1,26 @@
+# systemd unit for running ROOK as a service. Copy it to /etc/systemd/system/rook.service, change
+# the three paths and the user to match your install, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now rook
+#   journalctl -u rook -f
+
+[Unit]
+Description=ROOK planner and assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# The account that owns the checkout and its data/ folder
+User=rook
+Group=rook
+# Where the repository is checked out
+WorkingDirectory=/opt/rook
+# Bun's install location for that user (`which bun`)
+ExecStart=/home/rook/.bun/bin/bun run app.js
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

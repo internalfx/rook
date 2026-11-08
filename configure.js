@@ -1,11 +1,24 @@
-import config from "./config.js"
-import path from "node:path"
+import fs from 'node:fs'
+import path from 'node:path'
+
+// Loads config.js and adds what's worked out from it: the environment flags and the directories.
+// The values themselves are checked when the server starts (lib/checkConfig.js).
 
 const isBun = !!process.versions.bun
 
 if (isBun !== true) {
-  process.exit()
+  console.error(`ROOK runs on Bun (https://bun.sh); start it with bun, not node.`)
+  process.exit(1)
 }
+
+const configPath = path.join(__dirname, `config.js`)
+
+if (fs.existsSync(configPath) === false) {
+  console.error(`No config.js: copy config.example.js to config.js and fill it in (see README.md).`)
+  process.exit(1)
+}
+
+const { default: config } = await import(configPath)
 
 if (config.env === `production`) {
   config.isDevelopment = false
@@ -16,12 +29,8 @@ if (config.env === `production`) {
 }
 
 config.appDir = __dirname
-config.apiDir = path.join(__dirname, `api`)
 config.routesDir = path.join(__dirname, `routes`)
-config.controllerDir = path.join(__dirname, `api`, `controllers`)
 config.templateDir = path.join(__dirname, `templates`)
-config.emailDir = path.join(__dirname, `emails`)
-config.sysDir = path.join(__dirname, `system`)
 config.dataDir = path.join(__dirname, `data`)
 config.migrationsDir = path.join(__dirname, `migrations`)
 

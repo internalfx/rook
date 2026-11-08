@@ -1,13 +1,16 @@
-import puppeteer from '../private/puppeteer'
+import puppeteer from 'puppeteer-extra'
+import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 
 // One headless Chrome, shared by every read_web_page call, so pages are read as a browser
 // renders them (content that a site builds with JavaScript included). It starts on first use
 // and closes after a while unused to give its memory back.
 //
-// Chrome runs as itself, with its own "HeadlessChrome" User-Agent: sites that refuse automated
-// visitors (Google search, say) will refuse this too.
+// The stealth plugin makes it look like an ordinary Chrome (a normal User-Agent, no webdriver
+// flag), so sites that turn away headless browsers mostly serve it; some still will.
 //
 // The browser is installed separately from the package: bunx puppeteer browsers install chrome-headless-shell
+
+puppeteer.use(StealthPlugin())
 
 const navigationTimeout = 1000 * 30
 

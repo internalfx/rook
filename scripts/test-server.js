@@ -46,7 +46,7 @@ checkConfig()
 const { default: db } = await import(`../lib/db.js`)
 const { default: users } = await import(`../lib/users.js`)
 
-// The test logins: user 1 (set up from config.owner, with a copy of their data) becomes
+// The test logins: user 1 (the owner, with a copy of their data) becomes
 // test@rook.local, and test2@rook.local is added with nothing. None of the real logins carry
 // over, and notifications are kept without pushing to anyone's phone.
 const passhash = await Bun.password.hash(`rook-test`)

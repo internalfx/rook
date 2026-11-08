@@ -1,4 +1,4 @@
--- Users: everyone who can log in (see services/users.js). Each user's chats, memories, tasks,
+-- Users: everyone who can log in (see lib/users.js). Each user's chats, memories, tasks,
 -- briefings and notifications are theirs alone, with a userId on each; chat messages belong to
 -- their chat. User 1 is the owner from config.js: it's made empty here, and the first start fills
 -- it in from config.owner.
@@ -17,7 +17,7 @@ CREATE TABLE users (
 INSERT INTO users (id, email, name, passhash, createdAt, updatedAt)
 VALUES (1, '', '', '', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
 
--- Each user's own settings (services/settings.js): their ntfy topic, Slack token and picks, time
+-- Each user's own settings (lib/settings.js): their ntfy topic, Slack token and picks, time
 -- zone, and when they last saw the Briefing and Notifications pages. What applies to everyone
 -- (the models, tools and briefing schedule) is in config.js now, so the old settings table goes
 -- once the owner's personal rows are moved over.

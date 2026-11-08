@@ -47,7 +47,7 @@ koa.use(ratelimit({
 }))
 koa.use(cors(config.koa.cors))
 
-// Pages are only ever framed by AAMCRM's own tab shell, never by other sites
+// Pages may only be framed by rook's own pages, never by other sites
 koa.use(async function (ctx, next) {
   ctx.set(`Content-Security-Policy`, `frame-ancestors 'self'`)
   await next()
