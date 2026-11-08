@@ -1,0 +1,46 @@
+# Lints and starts a fresh install to make sure a clone still boots, stylesheet build included
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      # Chrome is only needed for the web tools, never at startup
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun run lint
+
+      - name: Start a fresh install and load the login page
+        run: |
+          cp config.example.js config.js
+          # A chat model has to be named; nothing listens on port 9, and an unreachable Lemonade
+          # server is only warned about
+          sed -i 's#chat: null#chat: `ci-model`#; s#http://localhost:8000#http://127.0.0.1:9#' config.js
+          bun run app.js > server.log 2>&1 &
+          server=$!
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8005/login; then
+              echo "The server answered; its log:"
+              cat server.log
+              kill "$server"
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "The server didn't answer within 30 seconds; its log:"
+          cat server.log
+          kill "$server" || true
+          exit 1

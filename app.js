@@ -1,6 +1,7 @@
 
 import config from './configure.js'
 import { checkConfig, checkModels } from './lib/checkConfig.js'
+import { buildStylesheet } from './lib/stylesheet.js'
 import substruct from './substruct.js'
 import dayjs from 'dayjs'
 import AdvancedFormat from 'dayjs/plugin/advancedFormat'
@@ -11,6 +12,9 @@ import duration from 'dayjs/plugin/duration'
 
 // The server-wide options in config.js, before anything reads them
 checkConfig()
+
+// dist/application.css, before the first page asks for it
+buildStylesheet()
 
 // Scheduled briefings, sending scheduled notifications, and deleting old done tasks; the test
 // copy (scripts/test-server.js) runs without them

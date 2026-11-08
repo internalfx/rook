@@ -1,5 +1,7 @@
 # ROOK
 
+[![CI](https://github.com/internalfx/rook/actions/workflows/ci.yml/badge.svg)](https://github.com/internalfx/rook/actions/workflows/ci.yml)
+
 A planner and personal assistant that runs on your own models.
 
 ROOK is a small web app you run on a machine at home or in the office. Each user chats with a model that has tools: it keeps memories, manages a task list, reads web pages on sites you allow, searches the web, does arithmetic and date sums, and can read a user's Slack conversations. On a schedule it writes each user a briefing, an overview of what's going on with their memories, tasks, recent chats and Slack, and it can push notifications to their phone through [ntfy](https://ntfy.sh). Every user's data is their own, in one SQLite file.
@@ -33,15 +35,14 @@ bun scripts/models.js
 
 lists what the server has, by kind, with the names to paste into `models.chat` and the optional `models.embedding`, `models.image` and `models.pageReader`.
 
-Build the stylesheet, make the first account, and start:
+Make the first account and start:
 
 ```sh
-bun run css
 bun scripts/users.js     # Add a user; the first one is the admin
 bun run app
 ```
 
-ROOK is now at http://localhost:8005. The first start makes `data/rook.db` and applies the migrations.
+ROOK is now at http://localhost:8005. The first start makes `data/rook.db` and applies the migrations. Every start builds the stylesheet into `dist/`, so there is nothing to rebuild after an update.
 
 ## Configuration
 
@@ -85,6 +86,14 @@ adds a user, resets a password, makes or unmakes an admin, removes a user with e
 
 Each user sets their own things in Settings: time zone, an ntfy topic for phone notifications, a Slack token and which conversations briefings should read.
 
+To see ROOK with something in it before you've used it, add the demo user:
+
+```sh
+bun scripts/demo.js
+```
+
+That adds an account (demo@rook.local, with a password it prints) belonging to Bill, who runs a small print shop: chats, memories, tasks, a briefing and notifications, all made up and dated around today. Run it again for a fresh set, or with `--remove` to take the account away along with everything in it.
+
 ### ntfy
 
 Install the [ntfy](https://ntfy.sh) app, subscribe to a topic of your own (a hard-to-guess name), and paste the topic URL into Settings, with an access token if your ntfy server needs one. The Notifications page has a test button.
@@ -112,6 +121,7 @@ bun run dev        # the server, restarting when a file changes
 bun run devcss     # Tailwind, rebuilding when a template changes
 bun run lint
 bun scripts/test-server.js   # a copy on :8015 with a copy of the database, for trying things
+bun scripts/demo.js          # add or replace the demo user, for screenshots and a look around
 ```
 
 STYLEGUIDE.md has the code conventions.
@@ -127,6 +137,14 @@ STYLEGUIDE.md has the code conventions.
 - `migrations/` — numbered SQL files, applied in order on startup
 - `templates/`, `static/`, `assets/` — Nunjucks pages, served files, Tailwind input
 
+## Contributing
+
+Issues and pull requests are welcome. For anything bigger than a fix, open an issue first so we
+can talk it over. Before sending a pull request, run `bun run lint` and read STYLEGUIDE.md; CI
+checks the lint and that a fresh clone still starts.
+
+Security problems go through the Security tab, not the issue tracker: see SECURITY.md.
+
 ## License
 
-MIT. See LICENSE.
+MIT. See LICENSE. Code and assets from other projects are credited in THIRD_PARTY_NOTICES.md.

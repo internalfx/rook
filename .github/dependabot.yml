@@ -1,0 +1,17 @@
+# One grouped pull request a month for package updates, and one for the actions CI uses
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      dependencies:
+        patterns: ["*"]
+        # Majors come on their own, so a breaking change stands out
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

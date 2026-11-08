@@ -1,0 +1,62 @@
+name: Bug report
+description: Something in ROOK doesn't work the way it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to see it
+      placeholder: |
+        1. Open the Tasks page
+        2. ...
+
+  - type: input
+    id: bun
+    attributes:
+      label: Bun version
+      description: "`bun --version`"
+      placeholder: "1.4.4"
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: ROOK commit
+      description: "`git rev-parse --short HEAD` in the checkout"
+    validations:
+      required: true
+
+  - type: input
+    id: models
+    attributes:
+      label: Lemonade version and chat model
+      placeholder: "Lemonade 8.x, Qwen3-8B-GGUF"
+
+  - type: textarea
+    id: config
+    attributes:
+      label: config.js
+      description: Paste it with `lemonade.apikey` taken out
+      render: js
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Server log around the problem
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before opening
+      options:
+        - label: I searched the existing issues
+          required: true

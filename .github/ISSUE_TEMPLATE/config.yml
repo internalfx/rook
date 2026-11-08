@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security problems
+    url: https://github.com/internalfx/rook/security/advisories/new
+    about: Please report those privately, not as an issue. SECURITY.md explains.

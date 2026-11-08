@@ -11,6 +11,7 @@ import lemonade from '../lib/lemonade.js'
 //   3. The main blocks are kept in the page as it was, with what's inside and around them
 //      (keepMain)
 // The model only labels blocks, so every word kept is the page's own.
+// The license and notice for the ported code are in THIRD_PARTY_NOTICES.md.
 //
 // MinerU-HTML works on lxml trees, where the text after an element belongs to it (its "tail")
 // and an element's "text" is what comes before its first child. Some of its steps depend on that
