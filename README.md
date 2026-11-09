@@ -52,7 +52,7 @@ The first start makes `data/rook.db` and builds the stylesheet. Nothing needs ed
 
 ## Models
 
-ROOK gives each job to a model of its own, all served by Lemonade: a chat model, and optionally an embedding model, an image model and a page reader. Only the chat model is required. The sizes below are the download at the quantization Lemonade picks; a model wants about that much GPU or unified memory free, plus room for its context.
+ROOK gives each job to a model of its own, all served by Lemonade: a chat model, and optionally an embedding model, an image model and a page reader. Only the chat model is required. The size given for each model is how much it downloads, and roughly how much memory it takes to run.
 
 Each model below comes with the `lemonade pull` command that downloads it and registers it with the server; Lemonade's Model Manager does the same with a click. Once pulled, they appear in the lists on the setup wizard and Admin → Models. A set to start with, which all comes to about 31 GB when every model is loaded:
 
