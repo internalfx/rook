@@ -38,7 +38,7 @@ body:
     id: models
     attributes:
       label: Lemonade version and chat model
-      placeholder: "Lemonade 8.x, Qwen3-8B-GGUF"
+      placeholder: "Lemonade 11.x, Qwen3.8-27B-GGUF"
 
   - type: textarea
     id: config

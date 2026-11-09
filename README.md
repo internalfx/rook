@@ -30,7 +30,7 @@ No subscription, no cloud account, no one else's servers. Clone it, point it at 
 ## Requirements
 
 - [Bun](https://bun.sh) 1.2 or newer. ROOK uses Bun's SQLite and password hashing, so Node won't run it.
-- A Lemonade server with a chat model loaded. Models that understand tool calls work best (Qwen 3 and the like). Optional models: an embedding model for memories and finding tasks by meaning, an image model for generating pictures, and a MinerU-HTML model for picking the main content out of web pages.
+- A Lemonade server with a chat model loaded; see [Models](#models) for which.
 - For the web tools (reading pages, searching): a headless Chrome, installed once with
 
   ```sh
@@ -46,9 +46,73 @@ bun install
 bun run app
 ```
 
-Open http://localhost:8005. The first visit is a four-step setup: it asks where your Lemonade server is (with a button to check it answers), lets you choose models from what that server has, and makes your account, which is the admin's. Do it right away: until an account exists, anyone who can reach the server can make it. Everything chosen there can be changed later on the Admin pages.
+Open http://localhost:8005. The first visit is a four-step setup: it asks where your Lemonade server is (with a button to check it answers), lets you choose models from what that server has (see [Models](#models)), and makes your account, which is the admin's. Do it right away: until an account exists, anyone who can reach the server can make it. Everything chosen there can be changed later on the Admin pages.
 
 The first start makes `data/rook.db` and builds the stylesheet. Nothing needs editing.
+
+## Models
+
+ROOK gives each job to a model of its own, all served by Lemonade: a chat model, and optionally an embedding model, an image model and a page reader. Only the chat model is required. The sizes below are the download at the quantization Lemonade picks; a model wants about that much GPU or unified memory free, plus room for its context.
+
+Each model below comes with the `lemonade pull` command that downloads it and registers it with the server; Lemonade's Model Manager does the same with a click. Once pulled, they appear in the lists on the setup wizard and Admin → Models. A set to start with, which all comes to about 31 GB when every model is loaded:
+
+```sh
+lemonade pull Qwen3.8-27B-GGUF                                    # chat, required
+lemonade pull Qwen3-Embedding-4B-GGUF                             # memories and tasks by meaning
+lemonade pull SDXL-Turbo                                          # pictures
+lemonade pull jinzhenj/MinerU-HTML-v1.1-Hunyuan-0.5B-GGUF:Q8_0    # reading web pages
+```
+
+The set ROOK is developed against, on an AMD Ryzen AI Max+ machine with 188 GB of memory:
+
+```sh
+lemonade pull unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL
+lemonade pull Qwen3-Embedding-8B-GGUF
+lemonade pull SDXL-Base-1.0
+lemonade pull jinzhenj/MinerU-HTML-v1.1-Hunyuan-0.5B-GGUF:Q8_0
+```
+
+Names on their own, like `SDXL-Turbo`, are models in Lemonade's own list. The two given as `owner/repository:file` aren't in that list and are pulled straight from Hugging Face, which registers them under the repository's name.
+
+### Chat
+
+Chats, briefings and the checks on scheduled notifications all use it. It has to understand tool calls, since tasks, memories and the web tools are all tool calls (Lemonade labels these models `tool-calling`). One labelled `vision` lets people attach images in chats. Reasoning models think before they answer, which is slower but better for briefings.
+
+| Model | Size | Pull | Notes |
+|---|---|---|---|
+| [Qwen3.8-27B](https://huggingface.co/unsloth/Qwen3.8-27B-GGUF) | 19 GB | `lemonade pull Qwen3.8-27B-GGUF` | Tool calling, vision, reasoning. Tried with ROOK; the pick for a card with 24 to 32 GB. |
+| [Qwen3.8-Flash-Next](https://huggingface.co/unsloth/Qwen3.8-Flash-Next-GGUF) | 111 GB | `lemonade pull unsloth/Qwen3.8-Flash-Next-GGUF:UD-Q4_K_XL` | What ROOK is developed on. 125B parameters with 6B active, so it answers fast for its size; tool calling, vision, a 256K context. Needs 128 GB or more of unified memory. |
+| [Qwen3.6-35B-A3B](https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF) | 23 GB | `lemonade pull Qwen3.6-35B-A3B-GGUF` | Mixture of experts, so fast for its size; tool calling and vision. Not tried with ROOK yet. |
+| [gpt-oss-20b](https://huggingface.co/unsloth/gpt-oss-20b-GGUF) | 12 GB | `lemonade pull gpt-oss-20b-GGUF` | Reasoning and tool calling, for a 16 GB card. Not tried with ROOK yet. |
+| [Qwen3.5-9B](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF) | 7 GB | `lemonade pull Qwen3.5-9B-GGUF` | The small end: tool calling and vision in 8 GB. Not tried with ROOK yet. |
+
+### Embedding
+
+Finds memories and tasks by meaning; memories need one. Use a Qwen3-Embedding model: ROOK tells these what each search is for, which sharpens the results, and other embedding models don't take that. Changing the embedding model later is fine: memories and tasks are re-embedded at the next search.
+
+| Model | Size | Pull | Notes |
+|---|---|---|---|
+| [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B-GGUF) | 4 GB | `lemonade pull Qwen3-Embedding-4B-GGUF` | The middle pick. |
+| [Qwen3-Embedding-8B](https://huggingface.co/Qwen/Qwen3-Embedding-8B-GGUF) | 8 GB | `lemonade pull Qwen3-Embedding-8B-GGUF` | What ROOK is developed on. |
+| [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF) | 0.6 GB | `lemonade pull Qwen3-Embedding-0.6B-GGUF` | When memory is tight. |
+
+### Image
+
+Optional, for making pictures in chats. The picture size, 256 to 768 pixels, is set on Admin → Models.
+
+| Model | Size | Pull | Notes |
+|---|---|---|---|
+| [SDXL-Turbo](https://huggingface.co/stabilityai/sdxl-turbo) | 7 GB | `lemonade pull SDXL-Turbo` | A picture in a few steps. Tried with ROOK. |
+| [SDXL-Base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0) | 7 GB | `lemonade pull SDXL-Base-1.0` | Slower and better. What ROOK is developed on. |
+| [SD-Turbo-GGUF](https://huggingface.co/Green-Sky/SD-Turbo-GGUF) | 2 GB | `lemonade pull SD-Turbo-GGUF` | For small cards. Not tried with ROOK yet. |
+
+### Page reader
+
+Optional. A MinerU-HTML model picks the main content out of web pages before the chat model reads them, so a long article costs a fraction of the tokens. It has to be MinerU-HTML v1.1: ROOK's page-reading code is a port of that version's method and uses its prompt word for word. Lemonade's list has none, so this one comes from Hugging Face; ROOK knows page readers by "MinerU-HTML" in their name, which a repository pull keeps.
+
+| Model | Size | Pull | Notes |
+|---|---|---|---|
+| [MinerU-HTML-v1.1-Hunyuan-0.5B-GGUF](https://huggingface.co/jinzhenj/MinerU-HTML-v1.1-Hunyuan-0.5B-GGUF) | 0.5 GB | `lemonade pull jinzhenj/MinerU-HTML-v1.1-Hunyuan-0.5B-GGUF:Q8_0` | A GGUF of OpenDataLab's [MinerU-HTML-v1.1-hunyuan0.5B-compact](https://huggingface.co/opendatalab/MinerU-HTML-v1.1-hunyuan0.5B-compact). What ROOK is developed on. |
 
 ## Configuration
 
@@ -63,7 +127,7 @@ Admins have an **Admin** group in the sidebar. Changes made there take effect at
 | Overview | How the Lemonade server is doing (loaded models, throughput, the machine) and ROOK itself (uptime, what's running, the database), refreshing every few seconds |
 | Users | Everyone with an account and what ROOK holds for each; see [Users](#users) |
 | Lemonade | The server's address, like `http://localhost:8000`, and an API key if it wants one. Check connection tries it before saving. |
-| Models | Chat model (required; chats, briefings and the checks on scheduled notifications use it, and one that understands tool calls works best), embedding model (finds memories and tasks by meaning; memories need one), image model and size (or none), and a MinerU-HTML page reader that picks the main content out of web pages (or none). Everything the server has is listed underneath. |
+| Models | Chat model (required; chats, briefings and the checks on scheduled notifications use it, and one that understands tool calls works best), embedding model (finds memories and tasks by meaning; memories need one), image model and size (or none), and a MinerU-HTML page reader that picks the main content out of web pages (or none). Everything the server has is listed underneath. Recommendations are under [Models](#models). |
 | Tools | Tasks, memories, web search (through DuckDuckGo in a headless Chrome), and web pages on the sites you list |
 | Briefings | Scheduled briefings for every user, and how many minutes apart |
 
@@ -148,9 +212,9 @@ STYLEGUIDE.md has the code conventions.
 
 ## Contributing
 
-Issues and pull requests are welcome. For anything bigger than a fix, open an issue first so we
-can talk it over. Before sending a pull request, run `bun run lint` and read STYLEGUIDE.md; CI
-checks the lint and that a fresh clone still starts.
+I am not currently accepting code from others. But please feel free to open an issue for any feature requests.
+
+## Security
 
 Security problems go through the Security tab, not the issue tracker: see SECURITY.md.
 
