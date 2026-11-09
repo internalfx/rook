@@ -16,7 +16,8 @@ All of it runs on a machine you control. The models run on your own [Lemonade](h
 - **Phone notifications** through [ntfy](https://ntfy.sh), checked by the model before they go out
 - **Slack, read-only**, through each user's own token, so it only sees what they can
 - **Web pages and search** on the sites you allow, plus arithmetic, dates and image generation
-- **Multiple users**, each with their own data, on one install
+- **Discuss** any task, memory or notification in a chat that starts with it
+- **Multiple users**, each with their own data, on one install, managed from the browser
 
 No subscription, no cloud account, no one else's servers. Clone it, point it at your models, and it's yours.
 
@@ -45,24 +46,32 @@ bun install
 bun run app
 ```
 
-Open http://localhost:8005. The first visit is a short setup: it asks where your Lemonade server is, lets you choose models from what that server has, and makes your account, which is the admin's. Do it right away: until an account exists, anyone who can reach the server can make it.
+Open http://localhost:8005. The first visit is a four-step setup: it asks where your Lemonade server is (with a button to check it answers), lets you choose models from what that server has, and makes your account, which is the admin's. Do it right away: until an account exists, anyone who can reach the server can make it. Everything chosen there can be changed later on the Admin pages.
 
 The first start makes `data/rook.db` and builds the stylesheet. Nothing needs editing.
 
 ## Configuration
 
-Two kinds of settings, in two places.
+Two kinds of settings, in two places: the Admin pages for what may change while ROOK runs, and environment variables for what's decided when it's deployed. There's no config file.
 
-**The Admin pages**, in the app, hold what an admin may change while ROOK runs. Changes take effect at once; a reply already under way finishes as it started.
+### Admin
+
+Admins have an **Admin** group in the sidebar. Changes made there take effect at once, without a restart; a reply already under way finishes as it started.
 
 | Page | What's on it |
 |---|---|
-| Admin → Lemonade | The server's address, like `http://localhost:8000`, and an API key if it wants one. Check connection tries it before saving. |
-| Admin → Models | Chat model (required; chats, briefings and the checks on scheduled notifications use it, and one that understands tool calls works best), embedding model (finds memories and tasks by meaning; memories need one), image model and size (or none), and a MinerU-HTML page reader that picks the main content out of web pages (or none). Everything the server has is listed underneath. |
-| Admin → Tools | Tasks, memories, web search (through DuckDuckGo in a headless Chrome), and web pages on the sites you list. |
-| Admin → Briefings | Scheduled briefings for every user, and how many minutes apart. |
+| Overview | How the Lemonade server is doing (loaded models, throughput, the machine) and ROOK itself (uptime, what's running, the database), refreshing every few seconds |
+| Users | Everyone with an account and what ROOK holds for each; see [Users](#users) |
+| Lemonade | The server's address, like `http://localhost:8000`, and an API key if it wants one. Check connection tries it before saving. |
+| Models | Chat model (required; chats, briefings and the checks on scheduled notifications use it, and one that understands tool calls works best), embedding model (finds memories and tasks by meaning; memories need one), image model and size (or none), and a MinerU-HTML page reader that picks the main content out of web pages (or none). Everything the server has is listed underneath. |
+| Tools | Tasks, memories, web search (through DuckDuckGo in a headless Chrome), and web pages on the sites you list |
+| Briefings | Scheduled briefings for every user, and how many minutes apart |
 
-**Environment variables** hold what's decided when ROOK is deployed. All are optional.
+These live in the database (`lib/serverSettings.js`), so they travel with a backup of `data/`.
+
+### Environment variables
+
+What's decided when ROOK is deployed. All are optional.
 
 | Variable | Default | What it is |
 |---|---|---|
@@ -76,7 +85,7 @@ A bad value stops the server at startup with a message saying what's wrong. A mo
 
 ## Users
 
-The setup wizard makes the first account, the admin's. There's no sign-up page: an admin adds the rest on Admin → Users, which also edits a name or email, resets a password, makes or unmakes an admin, and removes a user with everything that's theirs. Passwords need at least 10 characters. Admins get the Admin pages in the sidebar: Overview (how the Lemonade server and ROOK are doing), Users, and the settings above.
+The setup wizard makes the first account, the admin's. There's no sign-up page: an admin adds the rest from Admin → Users, where each user has a page of their own. **Add user** asks for a name, email, password and whether they're an admin. A user's **Edit** page changes their name, email and admin status, and removes them along with everything that's theirs, after their email is typed in to confirm. **Password** sets a new one. Passwords need at least 10 characters, and an admin's own admin status and account are another admin's to change, so no one can lock themselves out.
 
 When no admin can log in, such as after a lost admin password, the same things can be done on the server:
 
@@ -129,13 +138,13 @@ STYLEGUIDE.md has the code conventions.
 ## Layout
 
 - `services/` — code that runs on its own: the cron jobs in `cron.js` and what they start
-- `lib/` — code shared across the app: the database and models, the Lemonade client, page helpers, prompts
+- `lib/` — code shared across the app: the database and models, the Lemonade client, the server settings, page helpers, prompts
 - `routes/` — one file per URL; every `.js` here is a public route
 - `middleware/` — the Koa middleware `substruct.js` loads
 - `ai-tools/` — the tools the chat model can call
 - `scripts/` — run by hand, e.g. `bun scripts/models.js`
 - `migrations/` — numbered SQL files, applied in order on startup
-- `templates/`, `static/`, `assets/` — Nunjucks pages, served files, Tailwind input
+- `templates/`, `static/`, `assets/` — Nunjucks pages, served files (including the sidebar's icons), Tailwind input
 
 ## Contributing
 

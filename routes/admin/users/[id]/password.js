@@ -1,7 +1,22 @@
 import joi from '../../../../lib/joi.js'
 import users from '../../../../lib/users.js'
 
-// Form POST from a user's Reset password row on Admin → Users. Their browsers stay logged in.
+// Admin → Users → a user's new password. Their browsers stay logged in.
+
+const render = function (ctx, user) {
+  ctx.body = ctx.nunjucks(`admin/userPassword`, { user, passwordMinLength: users.passwordMinLength })
+}
+
+export const GET = async function (ctx) {
+  const user = users.getUser(ctx.state.params.id)
+
+  if (user == null) {
+    return ctx.throw(404)
+  }
+
+  render(ctx, user)
+}
+
 export const POST = async function (ctx) {
   const user = users.getUser(ctx.state.params.id)
 
@@ -18,12 +33,12 @@ export const POST = async function (ctx) {
     }).validateAsync(ctx.request.body ?? {}, { stripUnknown: true })
   } catch (e) {
     ctx.addFlash(e.message, `error`)
-    return ctx.redirect(`/admin/users`)
+    return render(ctx, user)
   }
 
   if (args.password !== args.confirm) {
     ctx.addFlash(`The passwords don't match.`, `error`)
-    return ctx.redirect(`/admin/users`)
+    return render(ctx, user)
   }
 
   await users.setPassword(user.id, args.password)

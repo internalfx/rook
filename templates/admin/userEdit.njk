@@ -1,0 +1,51 @@
+{% extends 'layouts/default' %}
+{% from 'partials/adminBits' import backLink %}
+
+{% set inputClass = 'w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600' %}
+
+{% block body %}
+  <div class="p-4 sm:p-8">
+    {{ backLink('/admin/users', 'Users') }}
+    <h1 class="text-2xl font-bold">{{ user.name }}</h1>
+    <p class="mt-1 mb-6 text-sm text-gray-500">{{ user.email }}{% if isSelf %} · this is you{% endif %}. <a href="/admin/users/{{ user.id }}/password" class="underline hover:text-gray-800">Change {{ 'your' if isSelf else 'their' }} password</a>.</p>
+
+    <form method="post" action="/admin/users/{{ user.id }}/edit" class="max-w-md bg-white rounded-lg shadow-sm">
+      <div class="p-4 space-y-4">
+        <div>
+          <label for="name" class="block text-sm font-medium">Name</label>
+          <input id="name" name="name" type="text" value="{{ values.name }}" required autocomplete="off" class="{{ inputClass }}">
+        </div>
+        <div>
+          <label for="email" class="block text-sm font-medium">Email</label>
+          <input id="email" name="email" type="email" value="{{ values.email }}" required autocomplete="off" spellcheck="false" autocapitalize="off" class="{{ inputClass }}">
+        </div>
+        <label class="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="isAdmin" class="mt-0.5 size-4 shrink-0 accent-sky-600" {% if values.isAdmin %}checked{% endif %} {% if isSelf %}disabled{% endif %}>
+          <span><span class="font-medium">Admin</span><span class="block text-xs text-gray-500">{% if isSelf %}Another admin changes this for you.{% else %}Sees the Admin pages and can change them.{% endif %}</span></span>
+        </label>
+      </div>
+      <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-200">
+        <button type="submit" class="px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Save</button>
+        <a href="/admin/users" class="px-3 py-2 text-sm rounded-lg hover:bg-gray-100">Cancel</a>
+      </div>
+    </form>
+
+    {% if isSelf %}
+      <p class="mt-6 max-w-md text-sm text-gray-500">Your own account is removed from another admin's login.</p>
+    {% else %}
+      <form method="post" action="/admin/users/{{ user.id }}/delete" class="mt-6 max-w-md bg-white rounded-lg shadow-sm border border-red-200">
+        <div class="px-4 py-3 border-b border-red-200">
+          <h2 class="font-bold text-red-800">Remove this user</h2>
+          <p class="mt-0.5 text-xs text-red-800">Deletes every chat, memory, task, briefing and notification of {{ user.name }}'s, and logs them out everywhere.</p>
+        </div>
+        <div class="p-4">
+          <label for="confirm" class="block text-sm font-medium">Type their email to go on</label>
+          <input id="confirm" name="confirm" type="text" placeholder="{{ user.email }}" autocomplete="off" spellcheck="false" autocapitalize="off" class="{{ inputClass }} mt-1">
+        </div>
+        <div class="px-4 py-3 border-t border-red-200">
+          <button type="submit" class="px-4 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg">Remove</button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+{% endblock body %}
