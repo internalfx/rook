@@ -1,4 +1,5 @@
 {% extends 'layouts/default' %}
+{% from 'partials/adminBits' import fact, failed %}
 
 {% block head %}
 <script>
@@ -77,25 +78,12 @@
 </script>
 {% endblock %}
 
-{# One line of a definition list: a label and its value #}
-{% macro fact(label, value) %}
-  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2">
-    <dt class="w-40 shrink-0 text-xs text-gray-500">{{ label }}</dt>
-    <dd class="flex-1 min-w-0 text-sm wrap-break-word">{{ value }}</dd>
-  </div>
-{% endmacro %}
-
-{# What a section shows when its Lemonade call failed #}
-{% macro failed(error) %}
-  <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">{{ error }}</div>
-{% endmacro %}
-
 {% block body %}
   <div class="p-4 sm:p-8" x-data="adminPage">
     <div class="flex flex-wrap items-start gap-4">
       <div class="flex-1 min-w-0">
-        <h1 class="text-2xl font-bold">Admin</h1>
-        <p class="mt-1 text-sm text-gray-500">The Lemonade server at <code class="font-mono">{{ lemonadeHost }}</code>, and what Rook holds.</p>
+        <h1 class="text-2xl font-bold">Overview</h1>
+        <p class="mt-1 text-sm text-gray-500">{% if lemonadeHost %}The Lemonade server at <code class="font-mono">{{ lemonadeHost }}</code>{% else %}No Lemonade server is set yet (see <a href="/admin/lemonade" class="underline">Lemonade</a>){% endif %}, and Rook itself, right now.</p>
       </div>
 
       <div class="flex flex-wrap items-center gap-3">
@@ -105,7 +93,7 @@
           <span x-show="!problem && updatedAt" style="display: none">Updated <span x-text="updatedAt"></span></span>
         </p>
 
-        {# An on/off switch, as Settings had: the checkbox is hidden, the slider is drawn #}
+        {# An on/off switch, as Settings has: the checkbox is hidden, the slider is drawn #}
         <label class="flex items-center gap-2 text-sm cursor-pointer">
           <span class="relative inline-flex shrink-0 items-center">
             <input type="checkbox" x-model="auto" class="peer sr-only">
@@ -119,8 +107,8 @@
       </div>
     </div>
 
-    <div id="admin-content" x-ref="content" class="mt-6 grid gap-6 xl:grid-cols-6 xl:items-start">
-      <div class="col-span-2 space-y-6">
+    <div id="admin-content" x-ref="content" class="mt-6 grid gap-6 lg:grid-cols-2 lg:items-start">
+      <div class="space-y-6">
         {# What's loaded, from /health #}
         <section class="bg-white rounded-lg shadow-sm">
           <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200">
@@ -170,6 +158,21 @@
             <p class="px-4 py-2 text-xs text-gray-500 border-t border-gray-100">Since the Lemonade server started, for everything that uses it.</p>
           {% endif %}
         </section>
+      </div>
+
+      <div class="space-y-6">
+        {# Rook itself #}
+        <section class="bg-white rounded-lg shadow-sm">
+          <h2 class="px-4 py-3 font-bold border-b border-gray-200">Rook</h2>
+
+          <dl class="divide-y divide-gray-100">
+            {{ fact('Up for', uptime) }}
+            {{ fact('Running now', repliesRunning + ' chat ' + ('reply' if repliesRunning == 1 else 'replies') + ', ' + briefingsRunning + ' ' + ('briefing' if briefingsRunning == 1 else 'briefings')) }}
+            {{ fact('Scheduled briefings', ('Every ' + briefingMinutes + ' minutes, one user at a time') if isScheduleOn else 'Off') }}
+            {{ fact('Database', numeral(storage.databaseBytes).format('0.0 b')) }}
+            {{ fact('Images', storage.imageCount + ' files, ' + numeral(storage.imageBytes).format('0.0 b')) }}
+          </dl>
+        </section>
 
         {# The machine, from /system-info #}
         <section class="bg-white rounded-lg shadow-sm">
@@ -187,104 +190,6 @@
                 {{ fact('Model storage', numeral(machine.storage.used).format('0.0 b') + ' used of ' + numeral(machine.storage.total).format('0.0 b') + ', ' + numeral(machine.storage.free).format('0.0 b') + ' free') }}
               {% endif %}
             </dl>
-          {% endif %}
-        </section>
-      </div>
-
-      <div class="col-span-4 space-y-6">
-        {# What rook holds, per user #}
-        <section class="bg-white rounded-lg shadow-sm">
-          <h2 class="px-4 py-3 font-bold border-b border-gray-200">Rook</h2>
-
-          <dl class="divide-y divide-gray-100">
-            {{ fact('Up for', uptime) }}
-            {{ fact('Running now', repliesRunning + ' chat ' + ('reply' if repliesRunning == 1 else 'replies') + ', ' + briefingsRunning + ' ' + ('briefing' if briefingsRunning == 1 else 'briefings')) }}
-            {{ fact('Scheduled briefings', ('Every ' + briefingMinutes + ' minutes, one user at a time') if isScheduleOn else 'Off in config.js') }}
-            {{ fact('Database', numeral(storage.databaseBytes).format('0.0 b')) }}
-            {{ fact('Images', storage.imageCount + ' files, ' + numeral(storage.imageBytes).format('0.0 b')) }}
-          </dl>
-
-          <div class="overflow-x-auto border-t border-gray-200">
-            <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left text-xs text-gray-500">
-                  <th class="px-4 py-2 font-medium">User</th>
-                  <th class="px-2 py-2 font-medium text-right">Chats</th>
-                  <th class="px-2 py-2 font-medium text-right">Messages</th>
-                  <th class="px-2 py-2 font-medium text-right">Memories</th>
-                  <th class="px-2 py-2 font-medium text-right">Tasks</th>
-                  <th class="px-2 py-2 font-medium text-right">Notifications</th>
-                  <th class="px-4 py-2 font-medium">Briefings</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-gray-100">
-                {% for user in userRows %}
-                  <tr>
-                    <td class="px-4 py-2">
-                      <span class="font-medium">{{ user.name }}</span>{% if user.isAdmin %} <span class="text-xs text-gray-500">admin</span>{% endif %}
-                      <span class="block text-xs text-gray-500 break-all">{{ user.email }} · {{ user.timeZone }}</span>
-                    </td>
-                    <td class="px-2 py-2 text-right tabular-nums">{{ user.chats }}</td>
-                    <td class="px-2 py-2 text-right tabular-nums">{{ user.messages }}</td>
-                    <td class="px-2 py-2 text-right tabular-nums">{{ user.memories }}</td>
-                    <td class="px-2 py-2 text-right tabular-nums" title="{{ user.openTasks }} to do, {{ user.doneTasks }} done">{{ user.openTasks }} <span class="text-gray-500">/ {{ user.doneTasks }}</span></td>
-                    <td class="px-2 py-2 text-right tabular-nums" title="{{ user.notifications }} sent, {{ user.waiting }} waiting">{{ user.notifications }} <span class="text-gray-500">/ {{ user.waiting }}</span></td>
-                    <td class="px-4 py-2 text-xs text-gray-500">
-                      {% if user.lastBriefing %}Last {{ user.lastBriefing }}{% else %}None yet{% endif %}{% if user.nextBriefing %}, next {{ user.nextBriefing }}{% endif %}
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-              <tfoot>
-                <tr class="border-t border-gray-200 font-medium">
-                  <td class="px-4 py-2">All</td>
-                  <td class="px-2 py-2 text-right tabular-nums">{{ totals.chats }}</td>
-                  <td class="px-2 py-2 text-right tabular-nums">{{ totals.messages }}</td>
-                  <td class="px-2 py-2 text-right tabular-nums">{{ totals.memories }}</td>
-                  <td class="px-2 py-2 text-right tabular-nums">{{ totals.openTasks }} <span class="text-gray-500">/ {{ totals.doneTasks }}</span></td>
-                  <td class="px-2 py-2 text-right tabular-nums">{{ totals.notifications }} <span class="text-gray-500">/ {{ totals.waiting }}</span></td>
-                  <td class="px-4 py-2"></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-          <p class="px-4 py-2 text-xs text-gray-500 border-t border-gray-100">Tasks are to do / done; notifications are sent / waiting to be sent.</p>
-        </section>
-
-        {# Everything Lemonade has, from /models, and what config.js uses #}
-        <section class="bg-white rounded-lg shadow-sm">
-          <h2 class="px-4 py-3 font-bold border-b border-gray-200">Models <span class="font-normal text-gray-500">· {{ listedModels.length }}</span></h2>
-
-          {% if models.error %}
-            {{ failed(models.error) }}
-          {% else %}
-            {% if missingModels.length > 0 %}
-              <div class="m-4 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
-                config.js names models the Lemonade server doesn't have: {{ missingModels.join(', ') }}.
-              </div>
-            {% endif %}
-
-            <ul class="divide-y divide-gray-100">
-              {% for model in listedModels %}
-                <li class="px-4 py-3">
-                  <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                    <span class="text-sm font-medium wrap-break-word">{{ model.id }}</span>
-                    {% for role in model.roles %}
-                      <span class="px-2 py-0.5 text-xs font-bold rounded-full bg-sky-100 text-sky-800">{{ role }}</span>
-                    {% endfor %}
-                    {% if not model.downloaded %}<span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">not downloaded</span>{% endif %}
-                    {% if model.updateAvailable %}<span class="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-900">update available</span>{% endif %}
-                  </div>
-                  <p class="mt-1 flex flex-wrap items-center gap-1 text-xs text-gray-500">
-                    {% for label in model.labels %}
-                      <span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{{ label }}</span>
-                    {% endfor %}
-                    {% if model.sizeGB != null %}<span class="ml-1">{{ model.sizeGB }} GB</span>{% endif %}
-                    {% if model.contextLength %}<span class="ml-1">· {{ model.contextLength }} context</span>{% endif %}
-                  </p>
-                </li>
-              {% endfor %}
-            </ul>
           {% endif %}
         </section>
       </div>

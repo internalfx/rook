@@ -27,23 +27,18 @@ realDb.close()
 config.dataDir = testDataDir
 config.port = Number(process.env.ROOK_TEST_PORT ?? 8015)
 config.host = `127.0.0.1`
-config.baseURL = `http://localhost:${config.port}`
 // Cookies on localhost are shared between ports, so logging in here mustn't replace the dev
 // server's
 config.session = { ...config.session, sessionCookieName: `ROOK-test.token` }
 config.cronOff = true
-// Plain HTTP on this machine, whatever config.js says: a production copy would refuse to set its
+// Plain HTTP on this machine, whatever ROOK_ENV says: a production copy would refuse to set its
 // secure cookie here, and would hide errors and stop reloading templates
 config.env = `development`
 config.isDevelopment = true
 config.isProduction = false
 
-// Before anything reads it, as app.js does. Imported only now: loading lib/checkConfig.js loads
-// lib/images.js, which fixes its folder under dataDir, so it has to come after the change above
-const { checkConfig } = await import(`../lib/checkConfig.js`)
-checkConfig()
-
-// Only now that dataDir points at the copy can anything open the database
+// Only now that dataDir points at the copy can anything open the database (lib/images.js fixes
+// its folder under dataDir when it loads too, so nothing above imports it)
 const { default: db } = await import(`../lib/db.js`)
 const { default: users } = await import(`../lib/users.js`)
 

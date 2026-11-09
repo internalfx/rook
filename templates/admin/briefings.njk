@@ -1,0 +1,28 @@
+{% extends 'layouts/default' %}
+{% from 'partials/adminBits' import pageHeader, card, saveBar %}
+
+{# The fields scroll above a bar along the bottom, so Save stays in reach #}
+{% block mainClass %}flex flex-col overflow-hidden{% endblock %}
+
+{% block body %}
+  <div class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8">
+    {{ pageHeader('Briefings', 'On a schedule, the model looks over each user\'s memories, tasks, recent chats and Slack and writes them an overview. Anyone can ask for one any time; this is about the schedule.') }}
+
+    <form id="briefings-form" method="post" action="/admin/briefings" class="space-y-6 max-w-3xl">
+      {% call card('Schedule', 'Checked every minute; a briefing takes a while, so one runs at a time.') %}
+        <label class="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="briefingsOn" class="mt-0.5 size-4 shrink-0 accent-sky-600" {% if briefings.on %}checked{% endif %}>
+          <span><span class="font-medium">Scheduled briefings</span><span class="block text-xs text-gray-500">For every user, one at a time.</span></span>
+        </label>
+        <div>
+          <label for="briefingMinutes" class="block text-sm font-medium">Minutes apart</label>
+          <p class="mt-0.5 mb-1 text-xs text-gray-500">From 1 to 1440. Each user's next briefing is this long after their last.</p>
+          <input id="briefingMinutes" name="briefingMinutes" type="number" min="1" max="1440" value="{{ briefings.minutes }}"
+            class="w-40 p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+        </div>
+      {% endcall %}
+    </form>
+  </div>
+
+  {{ saveBar('briefings-form') }}
+{% endblock body %}

@@ -7,6 +7,15 @@ versions follow [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- A setup wizard on the first visit to a new install: the Lemonade server, the models, then the
+  admin's account
+- Admin is a group in the sidebar with a page for each thing: Overview (how the Lemonade server
+  and ROOK are doing), Users, Lemonade (the server's address and key), Models (which the chats
+  use, with everything the server has listed), Tools (which are on, and the sites web pages may
+  be read from) and Briefings (the schedule). Saving takes effect without a restart.
+- Admin → Users adds users, edits a name or email, resets a password, makes or unmakes an
+  admin, and removes a user with everything that's theirs, so `bun scripts/users.js` is only
+  for a server no admin can log in to
 - Continuous integration on GitHub: lint, and a fresh install booted and asked for its login
   page
 - Dependabot, grouped and monthly
@@ -22,9 +31,19 @@ versions follow [Semantic Versioning](https://semver.org).
 
 ### Changed
 
+- Passwords need at least 10 characters everywhere: the setup wizard, Change password, Admin →
+  Users and `bun scripts/users.js`
+
+- config.js is gone. What's decided at deploy time comes from environment variables with
+  defaults (ROOK_PORT, ROOK_HOST, ROOK_ENV, ROOK_TRUST_PROXY, ROOK_DATA_DIR); everything else is
+  in the database, set in the app. A first start with an old config.js copies its settings in.
 - The 19 migrations are collapsed into one schema file; databases made before this stay at
   version 19 and need nothing
 - Six Alpine plugin files that nothing loaded are removed from static/
+
+### Removed
+
+- config.example.js, with config.js
 
 ### Fixed
 

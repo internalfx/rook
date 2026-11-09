@@ -20,7 +20,13 @@ WorkingDirectory=/opt/rook
 ExecStart=/home/rook/.bun/bin/bun run app.js
 Restart=on-failure
 RestartSec=5
-Environment=NODE_ENV=production
+# Production mode: the login cookie is only sent over HTTPS, so put a TLS proxy in front
+Environment=ROOK_ENV=production
+# Behind that proxy, so the client's address comes from X-Forwarded-For
+Environment=ROOK_TRUST_PROXY=true
+# The defaults are port 8005 on every address; change them here if needed
+# Environment=ROOK_PORT=8005
+# Environment=ROOK_HOST=127.0.0.1
 
 [Install]
 WantedBy=multi-user.target

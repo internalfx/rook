@@ -1,0 +1,40 @@
+{% extends 'layouts/default' %}
+{% from 'partials/adminBits' import pageHeader, card, saveBar %}
+
+{# The fields scroll above a bar along the bottom, so Save stays in reach #}
+{% block mainClass %}flex flex-col overflow-hidden{% endblock %}
+
+{% block body %}
+  <div class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8">
+    {{ pageHeader('Tools', 'What the chat model may do, for everyone. Saving takes effect at once; a reply already under way finishes as it started.') }}
+
+    <form id="tools-form" method="post" action="/admin/tools" class="space-y-6 max-w-3xl">
+      {% call card('Tools', 'Each one the model has is described to it with every message.') %}
+        <label class="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="tasks" class="mt-0.5 size-4 shrink-0 accent-sky-600" {% if tools.tasks %}checked{% endif %}>
+          <span><span class="font-medium">Tasks</span><span class="block text-xs text-gray-500">The model can add, find, change and complete tasks.</span></span>
+        </label>
+        <label class="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="memories" class="mt-0.5 size-4 shrink-0 accent-sky-600" {% if tools.memories %}checked{% endif %}>
+          <span><span class="font-medium">Memories</span><span class="block text-xs text-gray-500">The model saves and searches memories. Needs an embedding model (see Models).</span></span>
+        </label>
+        <label class="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="webSearch" class="mt-0.5 size-4 shrink-0 accent-sky-600" {% if tools.webSearch %}checked{% endif %}>
+          <span><span class="font-medium">Web search</span><span class="block text-xs text-gray-500">Searches go to DuckDuckGo, through a headless Chrome on the server.</span></span>
+        </label>
+        <label class="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="webPages" class="mt-0.5 size-4 shrink-0 accent-sky-600" {% if tools.webPages %}checked{% endif %}>
+          <span><span class="font-medium">Web pages</span><span class="block text-xs text-gray-500">The model may read pages on the sites below.</span></span>
+        </label>
+      {% endcall %}
+
+      {% call card('Sites it may read', 'One a line, like github.com; their subdomains are included. Empty means none.') %}
+        <label for="webDomains" class="sr-only">Sites it may read</label>
+        <textarea id="webDomains" name="webDomains" rows="6" spellcheck="false" autocapitalize="off"
+          class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">{{ tools.webDomains | join('\n') }}</textarea>
+      {% endcall %}
+    </form>
+  </div>
+
+  {{ saveBar('tools-form') }}
+{% endblock body %}

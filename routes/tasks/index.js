@@ -28,7 +28,7 @@ export const GET = async function (ctx) {
     const model = tools.getEmbeddingModel()
 
     if (model == null) {
-      searchError = `Searching by meaning needs an embedding model; name one in config.js.`
+      searchError = `Searching by meaning needs an embedding model; an admin chooses one in Admin → Models.`
     } else {
       try {
         const closest = await tasks.searchByMeaning({ userId, query: q, model, includeDone: true, limit: searchLimit, signal: AbortSignal.timeout(searchTimeout) })

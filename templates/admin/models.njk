@@ -1,0 +1,57 @@
+{% extends 'layouts/default' %}
+{% from 'partials/adminBits' import pageHeader, card, saveBar, failed %}
+{% from 'partials/serverSettingsFields' import modelFields %}
+
+{# The fields scroll above a bar along the bottom, so Save stays in reach #}
+{% block mainClass %}flex flex-col overflow-hidden{% endblock %}
+
+{% block body %}
+  <div class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8">
+    {{ pageHeader('Models', 'Which of the Lemonade server\'s models each job uses. Saving takes effect at once; changing the embedding model re-embeds memories and tasks at the next search.') }}
+
+    <form id="models-form" method="post" action="/admin/models" class="space-y-6 max-w-3xl">
+      {% call card('In use', 'From what the Lemonade server has; everything it lists is below.') %}
+        {{ modelFields(models, groups, groupsError, false) }}
+      {% endcall %}
+    </form>
+
+    {# Everything the server has, from /models, with the roles chosen above #}
+    <section class="mt-6 max-w-3xl bg-white rounded-lg shadow-sm">
+      <h2 class="px-4 py-3 font-bold border-b border-gray-200">On the server{% if serverModels %} <span class="font-normal text-gray-500">· {{ serverModels.length }}</span>{% endif %}</h2>
+
+      {% if serverError %}
+        {{ failed(serverError) }}
+      {% else %}
+        {% if missingModels.length > 0 %}
+          <div class="m-4 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
+            Models are chosen that the Lemonade server doesn't have: {{ missingModels.join(', ') }}.
+          </div>
+        {% endif %}
+
+        <ul class="divide-y divide-gray-100">
+          {% for model in serverModels %}
+            <li class="px-4 py-3">
+              <div class="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <span class="text-sm font-medium wrap-break-word">{{ model.id }}</span>
+                {% for role in model.roles %}
+                  <span class="px-2 py-0.5 text-xs font-bold rounded-full bg-sky-100 text-sky-800">{{ role }}</span>
+                {% endfor %}
+                {% if not model.downloaded %}<span class="px-2 py-0.5 text-xs rounded-full bg-gray-100 text-gray-700">not downloaded</span>{% endif %}
+                {% if model.updateAvailable %}<span class="px-2 py-0.5 text-xs rounded-full bg-amber-100 text-amber-900">update available</span>{% endif %}
+              </div>
+              <p class="mt-1 flex flex-wrap items-center gap-1 text-xs text-gray-500">
+                {% for label in model.labels %}
+                  <span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">{{ label }}</span>
+                {% endfor %}
+                {% if model.sizeGB != null %}<span class="ml-1">{{ model.sizeGB }} GB</span>{% endif %}
+                {% if model.contextLength %}<span class="ml-1">· {{ model.contextLength }} context</span>{% endif %}
+              </p>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </section>
+  </div>
+
+  {{ saveBar('models-form') }}
+{% endblock body %}

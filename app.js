@@ -1,6 +1,6 @@
 
 import config from './configure.js'
-import { checkConfig, checkModels } from './lib/checkConfig.js'
+import serverSettings from './lib/serverSettings.js'
 import { buildStylesheet } from './lib/stylesheet.js'
 import substruct from './substruct.js'
 import dayjs from 'dayjs'
@@ -10,8 +10,9 @@ import utc from 'dayjs/plugin/utc'
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import duration from 'dayjs/plugin/duration'
 
-// The server-wide options in config.js, before anything reads them
-checkConfig()
+// The Lemonade server, models, tools and briefing schedule, from the database, before anything
+// reads them
+await serverSettings.load()
 
 // dist/application.css, before the first page asks for it
 buildStylesheet()
@@ -32,5 +33,5 @@ await substruct.start()
 
 console.log(`Server Started...`)
 
-// Warns about models config.js names that the Lemonade server doesn't have
-checkModels()
+// Warns about models that are set but aren't on the Lemonade server, or says it isn't set up yet
+serverSettings.warnAboutModels()

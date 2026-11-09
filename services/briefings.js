@@ -20,7 +20,7 @@ import prompts from '../lib/prompts.js'
 // tidies the memories and tasks, and writes them a short overview. Discuss on the Briefing page
 // starts a chat with that overview as the model's first message. For something that matters now,
 // it can notify the user (lib/notifications.js), or schedule a notification for when it will
-// matter. Briefings run on a schedule set in config.js, for every user (see runIfDue), or when a
+// matter. Briefings run on a schedule set in Admin → Briefings, for every user (see runIfDue), or when a
 // user asks for one.
 //
 // Running briefings live in memory, like chat replies (lib/runs.js), so restarting the
@@ -56,7 +56,7 @@ const skippedLookBack = 1000 * 60 * 60 * 24
 const slackMessageLimit = 30
 const slackThreadLimit = 3
 
-// Used while config.js names no interval
+// Used while Admin → Briefings names no interval
 export const defaultBriefingMinutes = 360
 
 // The only chat tools a briefing has: it doesn't search the web or make images. It sees the
@@ -164,7 +164,7 @@ const shorten = function (text, limit = messageCharLimit) {
 // message.
 const describeMemories = function (user) {
   if (tools.isMemoriesOn() === false) {
-    return `Memories are off in config.js, so you have none and can't save any.`
+    return `Memories are off in Admin → Tools, so you have none and can't save any.`
   }
 
   const recent = memories.listRecent(user.id, recentMemoryLimit)
@@ -192,7 +192,7 @@ const describeTaskLines = function (taskList, zone) {
 // it can change them
 const describeTasks = function (user) {
   if (tools.isTasksOn() === false) {
-    return `Tasks are off in config.js, so you can't see or change them.`
+    return `Tasks are off in Admin → Tools, so you can't see or change them.`
   }
 
   const openTasks = tasks.listOpen(user.id)
@@ -468,7 +468,7 @@ const runBriefing = async function ({ briefingId, user, run, state, signal }) {
   const model = config.models.chat
 
   if (model == null) {
-    throw new Error(`Name a chat model in config.js first.`)
+    throw new Error(`Choose a chat model in Admin → Models first.`)
   }
 
   const chatTools = tools.getChatTools(user)

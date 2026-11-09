@@ -8,7 +8,7 @@ import prompts from '../lib/prompts.js'
 // web_search: searches DuckDuckGo (see duckduckgo.js), and marks the results read_web_page can
 // open
 
-// Off until switched on in config.js, since it sends the model's searches to DuckDuckGo
+// Off until switched on in Admin → Tools, since it sends the model's searches to DuckDuckGo
 export const isWebSearchOn = function () {
   return config.tools?.webSearch === true
 }
@@ -51,9 +51,9 @@ const runWebSearch = async function ({ argumentsText, signal }) {
     return { content: `The search failed: no query was given.`, imageId: null }
   }
 
-  // It can be switched off in config.js part way through a conversation
+  // It can be switched off in Admin → Tools part way through a conversation
   if (isWebSearchOn() === false) {
-    return { content: `Web search is turned off in config.js.`, imageId: null }
+    return { content: `Web search is turned off in Admin → Tools.`, imageId: null }
   }
 
   const results = await duckduckgo.search({ query: query.trim(), signal })
@@ -75,7 +75,7 @@ const runWebSearch = async function ({ argumentsText, signal }) {
 export const tools = [
   {
     name: `web_search`,
-    // In every chat's tools, but offered only while switched on in config.js (see
+    // In every chat's tools, but offered only while switched on in Admin → Tools (see
     // buildWebSearchTool)
     settings: () => ({}),
     definition: buildWebSearchTool,

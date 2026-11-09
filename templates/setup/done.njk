@@ -1,0 +1,17 @@
+{% extends "layouts/minimal" %}
+
+{% block body %}
+<div class="bg-white rounded-lg shadow-md p-8 lg:p-12 space-y-5">
+  <h1 class="text-xl font-bold">You're set up, {{ ctx.state.user.name }}</h1>
+  <p class="text-sm text-gray-700">ROOK is running and you're logged in as its admin. Some things to do next:</p>
+  <ul class="list-disc pl-5 space-y-1.5 text-sm text-gray-700">
+    <li><a href="/chat" class="underline hover:text-gray-900">Start a chat</a> and see what the model does with its tools.</li>
+    <li><a href="/admin/tools" class="underline hover:text-gray-900">Admin → Tools</a> for which tools are on and the sites web pages may be read from, and <a href="/admin/briefings" class="underline hover:text-gray-900">Admin → Briefings</a> for the schedule.</li>
+    <li><a href="/settings" class="underline hover:text-gray-900">Settings</a> for your time zone, phone notifications through ntfy, and Slack.</li>
+    <li>More accounts: <a href="/admin/users" class="underline hover:text-gray-900">Admin → Users</a>.</li>
+    <li>A look around with made-up data: <code class="font-mono text-xs">bun scripts/demo.js</code>.</li>
+    <li>Running it as a service, and the rest: the README.</li>
+  </ul>
+  <a href="/chat" class="inline-flex items-center px-5 py-3 text-md font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Start a chat</a>
+</div>
+{% endblock body %}

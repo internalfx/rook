@@ -1,0 +1,17 @@
+{% extends "layouts/minimal" %}
+{% from 'partials/serverSettingsFields' import lemonadeFields %}
+
+{% block body %}
+<form method="post" action="/setup/lemonade" class="bg-white rounded-lg shadow-md p-8 lg:p-12 space-y-5">
+  <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Step 2 of 4 · Lemonade server</p>
+  <h1 class="text-xl font-bold">Where are the models?</h1>
+  <p class="text-sm text-gray-700">ROOK talks to a <a href="https://lemonade-server.ai" class="underline hover:text-gray-900" target="_blank" rel="noopener">Lemonade</a> server, on this machine or another one you control. Give its address and check that it answers.</p>
+
+  {{ lemonadeFields(lemonadeHost, lemonadeKey, '/setup/check') }}
+
+  <div class="flex items-center gap-3">
+    <button type="submit" class="px-5 py-3 text-md font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Next</button>
+    <a href="/setup" class="text-sm text-gray-500 underline hover:text-gray-800">Back</a>
+  </div>
+</form>
+{% endblock body %}

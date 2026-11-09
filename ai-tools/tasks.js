@@ -7,7 +7,7 @@ import prompts from '../lib/prompts.js'
 // add_task, find_tasks, update_task and complete_task: the user's to-do list (see
 // lib/tasks.js)
 
-// Tasks are on unless switched off in config.js
+// Tasks are on unless switched off in Admin → Tools
 export const isTasksOn = function () {
   return config.tools?.tasks !== false
 }

@@ -1,0 +1,19 @@
+{% extends "layouts/minimal" %}
+{% from 'partials/serverSettingsFields' import modelFields %}
+
+{% block body %}
+<form method="post" action="/setup/models" class="bg-white rounded-lg shadow-md p-8 lg:p-12 space-y-5">
+  <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Step 3 of 4 · Models</p>
+  <h1 class="text-xl font-bold">Which models should it use?</h1>
+  <p class="text-sm text-gray-700">{% if groups %}From what <code class="font-mono text-xs">{{ lemonadeHost }}</code> has. Only the chat model is needed to start; the rest can wait.{% else %}The server didn't answer, so the lists are empty. Type the names if you know them, or skip this and choose them later in Admin → Models.{% endif %}</p>
+
+  <div class="space-y-4">
+    {{ modelFields(models, groups, groupsError, true) }}
+  </div>
+
+  <div class="flex items-center gap-3">
+    <button type="submit" class="px-5 py-3 text-md font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">{% if groups %}Next{% else %}Next, or skip{% endif %}</button>
+    <a href="/setup/lemonade" class="text-sm text-gray-500 underline hover:text-gray-800">Back</a>
+  </div>
+</form>
+{% endblock body %}

@@ -30,7 +30,7 @@ CREATE TABLE users (
 
 -- Each user's own settings (lib/settings.js): their time zone, ntfy topic, Slack token and
 -- picks, and when they last saw the Briefing and Notifications pages. What applies to everyone
--- (the models, tools and briefing schedule) is in config.js.
+-- (the models, tools and briefing schedule) is in Admin → Settings.
 CREATE TABLE userSettings (
   userId INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   key TEXT NOT NULL,
@@ -88,7 +88,7 @@ CREATE TABLE memories (
   -- content as a vector of float32s; null until it's embedded (lib/embeddings.js)
   embedding BLOB,
   -- The model that made `embedding`. Vectors from different models can't be compared, so a
-  -- memory whose model isn't the one in config.js is embedded again before the next search.
+  -- memory whose model isn't the one in Admin → Settings is embedded again before the next search.
   embeddingModel TEXT,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL
@@ -133,7 +133,7 @@ CREATE TABLE briefings (
   id TEXT PRIMARY KEY,
   userId INTEGER REFERENCES users (id) ON DELETE CASCADE,
   status TEXT NOT NULL CHECK (status IN ('running', 'done', 'failed')),
-  -- What started it: the schedule in config.js, or the Brief me now button
+  -- What started it: the schedule in Admin → Settings, or the Brief me now button
   startedBy TEXT NOT NULL CHECK (startedBy IN ('schedule', 'manual')),
   -- The model's closing summary; null until it's done
   overview TEXT,

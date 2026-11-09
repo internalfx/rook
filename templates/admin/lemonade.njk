@@ -1,0 +1,20 @@
+{% extends 'layouts/default' %}
+{% from 'partials/adminBits' import pageHeader, card, saveBar %}
+{% from 'partials/serverSettingsFields' import lemonadeFields %}
+
+{# The fields scroll above a bar along the bottom, so Save stays in reach #}
+{% block mainClass %}flex flex-col overflow-hidden{% endblock %}
+
+{% block body %}
+  <div class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8">
+    {{ pageHeader('Lemonade server', 'The server that runs the models, for every chat, briefing and search. Saving takes effect at once; a reply already under way finishes as it started.') }}
+
+    <form id="lemonade-form" method="post" action="/admin/lemonade" class="space-y-6 max-w-3xl">
+      {% call card('Connection', 'Check the address before saving. The model choices on the Models page come from the saved one.') %}
+        {{ lemonadeFields(lemonadeHost, lemonadeKey, '/admin/lemonade/check') }}
+      {% endcall %}
+    </form>
+  </div>
+
+  {{ saveBar('lemonade-form') }}
+{% endblock body %}

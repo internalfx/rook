@@ -12,6 +12,10 @@ addRoute(metaRouter, null, `/**`, { ...defaultMeta })
 // META ROUTES
 addRoute(metaRouter, null, `/auth/**`, { ...defaultMeta, secure: false })
 
+// The setup pages run before anyone can log in; the last one, after the account is made, needs it
+addRoute(metaRouter, null, `/setup/**`, { ...defaultMeta, secure: false })
+addRoute(metaRouter, null, `/setup/done`, { ...defaultMeta })
+
 // Only admins (users.isAdmin); the rest get a 404 (see middleware/auth.js)
 addRoute(metaRouter, null, `/admin/**`, { ...defaultMeta, admin: true })
 

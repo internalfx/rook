@@ -42,65 +42,47 @@ No subscription, no cloud account, no one else's servers. Clone it, point it at 
 git clone https://github.com/internalfx/rook.git
 cd rook
 bun install
-cp config.example.js config.js
-```
-
-Open `config.js` and set `lemonade.host` to your Lemonade server. Then pick the models:
-
-```sh
-bun scripts/models.js
-```
-
-lists what the server has, by kind, with the names to paste into `models.chat` and the optional `models.embedding`, `models.image` and `models.pageReader`.
-
-Make the first account and start:
-
-```sh
-bun scripts/users.js     # Add a user; the first one is the admin
 bun run app
 ```
 
-ROOK is now at http://localhost:8005. The first start makes `data/rook.db` and applies the migrations. Every start builds the stylesheet into `dist/`, so there is nothing to rebuild after an update.
+Open http://localhost:8005. The first visit is a short setup: it asks where your Lemonade server is, lets you choose models from what that server has, and makes your account, which is the admin's. Do it right away: until an account exists, anyone who can reach the server can make it.
+
+The first start makes `data/rook.db` and builds the stylesheet. Nothing needs editing.
 
 ## Configuration
 
-Everything server-wide is in `config.js`, which is never committed. Changing it needs a restart.
+Two kinds of settings, in two places.
 
-| Key | What it is | Default |
+**The Admin pages**, in the app, hold what an admin may change while ROOK runs. Changes take effect at once; a reply already under way finishes as it started.
+
+| Page | What's on it |
+|---|---|
+| Admin → Lemonade | The server's address, like `http://localhost:8000`, and an API key if it wants one. Check connection tries it before saving. |
+| Admin → Models | Chat model (required; chats, briefings and the checks on scheduled notifications use it, and one that understands tool calls works best), embedding model (finds memories and tasks by meaning; memories need one), image model and size (or none), and a MinerU-HTML page reader that picks the main content out of web pages (or none). Everything the server has is listed underneath. |
+| Admin → Tools | Tasks, memories, web search (through DuckDuckGo in a headless Chrome), and web pages on the sites you list. |
+| Admin → Briefings | Scheduled briefings for every user, and how many minutes apart. |
+
+**Environment variables** hold what's decided when ROOK is deployed. All are optional.
+
+| Variable | Default | What it is |
 |---|---|---|
-| `env` | `development` or `production`. Production sends the login cookie over HTTPS only, so it needs a TLS proxy in front. | `development` |
-| `port`, `host` | Where to listen | `8005`, `0.0.0.0` |
-| `appName` | What the assistant calls itself | `ROOK` |
-| `koa.proxy` | `true` behind a reverse proxy, so the client address comes from `X-Forwarded-For` | `false` |
-| `koa.cors` | Options for `@koa/cors` | `{}` |
-| `session.sessionCookieName` | The login cookie's name | `ROOK.token` |
-| `session.sessionCookieMaxAge` | How long a login lasts, in milliseconds | one year |
-| `lemonade.host` | The Lemonade server, like `http://localhost:8000` | required |
-| `lemonade.apikey` | Its API key, if it wants one | empty |
-| `models.chat` | The chat model's name on the server | required |
-| `models.image` | An image model, or `null` for no image generation | `null` |
-| `models.imageSize` | `256x256`, `512x512` or `768x768` | `512x512` |
-| `models.embedding` | An embedding model; needed for memories | `null` |
-| `models.pageReader` | A MinerU-HTML model that extracts a page's main content, or `null` to convert pages directly | `null` |
-| `tools.webPages` | Whether the model may read web pages | `true` |
-| `tools.webDomains` | The sites it may read, like `github.com` (subdomains included). Empty means none. | `[]` |
-| `tools.webSearch` | Web searches through DuckDuckGo | `false` |
-| `tools.memories` | Long-term memories; needs `models.embedding` | `false` |
-| `tools.tasks` | The task list | `true` |
-| `briefings.on` | Scheduled briefings for every user | `false` |
-| `briefings.minutes` | How far apart, 1 to 1440 | `360` |
+| `ROOK_PORT` | `8005` | Where to listen |
+| `ROOK_HOST` | `0.0.0.0` | The address to listen on; `127.0.0.1` for this machine only |
+| `ROOK_ENV` | `development` | `production` sends the login cookie over HTTPS only, so it needs a TLS proxy in front |
+| `ROOK_TRUST_PROXY` | `false` | `true` behind a reverse proxy, so the client address comes from `X-Forwarded-For` |
+| `ROOK_DATA_DIR` | `data/` in the checkout | Where the database and images live |
 
-A mistake in `config.js` stops the server at startup with a message saying what's wrong. A model the Lemonade server doesn't have is only warned about, since the server may be down.
+A bad value stops the server at startup with a message saying what's wrong. A model that the Lemonade server doesn't have is only warned about, since the server may be down.
 
 ## Users
 
-There's no sign-up page. Accounts are made on the server:
+The setup wizard makes the first account, the admin's. There's no sign-up page: an admin adds the rest on Admin → Users, which also edits a name or email, resets a password, makes or unmakes an admin, and removes a user with everything that's theirs. Passwords need at least 10 characters. Admins get the Admin pages in the sidebar: Overview (how the Lemonade server and ROOK are doing), Users, and the settings above.
+
+When no admin can log in, such as after a lost admin password, the same things can be done on the server:
 
 ```sh
 bun scripts/users.js
 ```
-
-adds a user, resets a password, makes or unmakes an admin, removes a user with everything that's theirs, or lists them. The first user added is an admin. Admins see the Admin page, which shows the Lemonade server and what ROOK holds.
 
 Each user sets their own things in Settings: time zone, an ntfy topic for phone notifications, a Slack token and which conversations briefings should read.
 
@@ -128,7 +110,7 @@ The model then has `read_slack` and `search_slack`, which only read; it never po
 
 `deploy/rook.service` is a systemd unit to copy to `/etc/systemd/system/rook.service`; change its user and paths, then `systemctl enable --now rook`. `deploy.sh` updates such an install to the latest commit, backing up the database first.
 
-For `env: production`, put a TLS proxy such as Caddy or nginx in front, forward to the port in `config.js`, and set `koa.proxy: true`. The login cookie is marked secure, so plain HTTP won't log anyone in.
+For production, set `ROOK_ENV=production` and `ROOK_TRUST_PROXY=true` (the unit file has them), and put a TLS proxy such as Caddy or nginx in front, forwarding to the port. The login cookie is marked secure, so plain HTTP won't log anyone in.
 
 Back up by copying `data/`: it holds the database (`rook.db`, in WAL mode, so copy it with `sqlite3 data/rook.db "VACUUM INTO 'backup.db'"` while running) and the images.
 

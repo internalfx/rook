@@ -5,7 +5,7 @@ import config from '../configure.js'
 import { readImagePrompt } from './arguments.js'
 import prompts from '../lib/prompts.js'
 
-// generate_image: makes a picture with the image model in config.js, and shows it in the chat
+// generate_image: makes a picture with the image model in Admin → Models, and shows it in the chat
 
 const generateImageTool = {
   type: `function`,
@@ -25,13 +25,13 @@ const generateImageTool = {
   },
 }
 
-// The image sizes config.js may name, from small to large ("WIDTHxHEIGHT")
+// The image sizes Admin → Models may name, from small to large ("WIDTHxHEIGHT")
 export const imageSizes = [`256x256`, `512x512`, `768x768`]
 
-// Used while config.js names no size; it's what the image models produce by default
+// Used while Admin → Models names no size; it's what the image models produce by default
 export const defaultImageSize = `512x512`
 
-// The image model in config.js, or null while images are off
+// The image model in Admin → Models, or null while images are off
 export const getImageModel = function () {
   return config.models?.image ?? null
 }
@@ -64,7 +64,7 @@ const runGenerateImage = async function ({ argumentsText, toolSettings, signal }
 export const tools = [
   {
     name: `generate_image`,
-    // Offered only while config.js has an image model
+    // Offered only while Admin → Models has an image model
     settings: function () {
       const imageModel = getImageModel()
 

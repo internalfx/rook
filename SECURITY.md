@@ -23,5 +23,7 @@ team. Two things are on the roadmap and worth knowing until they're done:
 
 - The notification test button has the server send a request to whatever ntfy URL a logged-in user
   has saved, so a user can make the server reach any address.
-- Slack tokens are stored in the database as the user entered them, not encrypted. Anyone with
-  the database file has them.
+- Slack tokens, and the Lemonade server's API key, are stored in the database as entered, not
+  encrypted. Anyone with the database file has them.
+- Until the first account exists, the setup pages are open to anyone who can reach the server, so
+  a new install should be set up right after it's started.

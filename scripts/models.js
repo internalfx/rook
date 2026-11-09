@@ -1,15 +1,15 @@
 
-// Lists the models on the Lemonade server, by kind, for naming them in config.js (models.chat,
-// models.image, models.embedding and models.pageReader)
+// Lists the models on the Lemonade server, by kind: what Admin → Models offers for the chat,
+// image, embedding and page reader models
 //   bun scripts/models.js
 
 import config from '../configure.js'
-import { checkConfig } from '../lib/checkConfig.js'
+import serverSettings from '../lib/serverSettings.js'
 import lemonade from '../lib/lemonade.js'
 import { formatContextLength } from '../lib/format.js'
 
-// Fills in and checks config.js, as the server does, so lemonade.host is there
-checkConfig()
+// The server's address, from the database, as the server itself loads it
+await serverSettings.load()
 
 let models = []
 

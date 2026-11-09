@@ -32,7 +32,7 @@ const maxDelays = 2
 const minDelayMinutes = 5
 const maxDelayMinutes = 240
 
-// What a check can use to look things up, as config.js allows. None of them change anything: a
+// What a check can use to look things up, as Admin → Models allows. None of them change anything: a
 // check runs with no one watching, and keeps no record of what it did.
 const lookupToolNames = [
   `find_tasks`, `search_memories`, `read_slack`, `search_slack`,
@@ -237,7 +237,7 @@ const checkNotification = async function (scheduled, user, signal) {
   const model = config.models.chat
 
   if (model == null) {
-    throw new Error(`no chat model is named in config.js`)
+    throw new Error(`no chat model is chosen in Admin → Models`)
   }
 
   const chatTools = tools.getChatTools(user)

@@ -43,9 +43,9 @@ body:
   - type: textarea
     id: config
     attributes:
-      label: config.js
-      description: Paste it with `lemonade.apikey` taken out
-      render: js
+      label: How it's set up
+      description: Any ROOK_* environment variables you set, and what the Admin pages show that matters (the model names from Admin → Models, which tools are on in Admin → Tools)
+      render: text
 
   - type: textarea
     id: log

@@ -1,0 +1,125 @@
+{# The fields the Admin pages (Lemonade, Models) and the setup pages share: the Lemonade server, and the models
+   chosen from what it has. Input classes match the Settings page. #}
+
+{% set inputClass = 'w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600' %}
+
+{# The server's address and key, with a Check button that asks `checkUrl` (POST, JSON) whether the
+   address answers, before anything is saved #}
+{% macro lemonadeFields(host, apikey, checkUrl) %}
+  <script>
+    document.addEventListener(`alpine:init`, () => {
+      Alpine.data(`lemonadeCheck`, (url) => ({
+        checking: false,
+        result: null,
+        ok: false,
+
+        async check () {
+          this.checking = true
+          this.result = null
+
+          try {
+            const response = await fetch(url, {
+              method: `POST`,
+              headers: { 'Content-Type': `application/json` },
+              body: JSON.stringify({ host: this.$refs.host.value, apikey: this.$refs.apikey.value }),
+            })
+            const data = await response.json()
+
+            this.ok = data.ok === true
+            this.result = data.ok ? `Reachable. ${data.summary}.` : data.error
+          } catch (err) {
+            this.ok = false
+            this.result = `Couldn't check: ${err.message}`
+          }
+
+          this.checking = false
+        },
+      }))
+    })
+  </script>
+
+  <div class="space-y-3" x-data="lemonadeCheck('{{ checkUrl }}')">
+    <div>
+      <label for="lemonadeHost" class="block text-sm font-medium">Address</label>
+      <p class="mt-0.5 mb-1 text-xs text-gray-500">Where the Lemonade server answers, like http://localhost:8000 or another machine on your network.</p>
+      <input id="lemonadeHost" x-ref="host" type="url" name="lemonadeHost" value="{{ host or '' }}" placeholder="http://localhost:8000"
+        spellcheck="false" autocapitalize="off" autocomplete="off" class="{{ inputClass }} font-mono">
+    </div>
+
+    <div>
+      <label for="lemonadeKey" class="block text-sm font-medium">API key</label>
+      <p class="mt-0.5 mb-1 text-xs text-gray-500">Only if the server asks for one; most don't.</p>
+      {# Masked with CSS rather than type="password", which would have browsers offer to save the
+         form as a login #}
+      <input id="lemonadeKey" x-ref="apikey" type="text" name="lemonadeKey" value="{{ apikey or '' }}"
+        spellcheck="false" autocapitalize="off" autocomplete="off" class="{{ inputClass }} font-mono [-webkit-text-security:disc]">
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <button type="button" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
+        :disabled="checking" @click="check()">Check connection</button>
+      <span x-show="checking" class="icon-loading inline-block size-4 bg-current text-gray-500" aria-hidden="true" style="display: none"></span>
+      <span x-show="result" x-text="result" :class="ok ? 'text-green-700' : 'text-red-700'" class="text-sm" role="status" style="display: none"></span>
+    </div>
+  </div>
+{% endmacro %}
+
+{# One model to choose: a select over `options` (the server's models of that kind) when there
+   are any, else a box to type the name in. The current name stays choosable when the server
+   doesn't list it any more. #}
+{% macro modelField(name, label, help, value, options, allowNone, required) %}
+  <div>
+    <label for="{{ name }}" class="block text-sm font-medium">{{ label }}</label>
+    <p class="mt-0.5 mb-1 text-xs text-gray-500">{{ help }}</p>
+    {% if options %}
+      <select id="{{ name }}" name="{{ name }}" class="{{ inputClass }}" {% if required %}required{% endif %}>
+        {% if allowNone %}
+          <option value="" {% if not value %}selected{% endif %}>None</option>
+        {% elif not value %}
+          <option value="" selected disabled>Choose one</option>
+        {% endif %}
+        {% if value and value not in options %}
+          <option value="{{ value }}" selected>{{ value }} (not on the server)</option>
+        {% endif %}
+        {% for id in options %}
+          <option value="{{ id }}" {% if id == value %}selected{% endif %}>{{ id }}</option>
+        {% endfor %}
+      </select>
+    {% else %}
+      <input id="{{ name }}" name="{{ name }}" type="text" value="{{ value or '' }}" placeholder="{{ 'Model name' if not allowNone else 'Model name, or leave empty' }}"
+        spellcheck="false" autocapitalize="off" autocomplete="off" class="{{ inputClass }} font-mono" {% if required %}required{% endif %}>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{# The five model fields. `current` is config.models; `groups` is the server's models by role from
+   serverSettings.listModelGroups, or null with `error` when it couldn't be reached. #}
+{% macro modelFields(current, groups, error, chatRequired = true) %}
+  {% if not groups %}
+    <div class="p-3 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="status">
+      Couldn't list the server's models{% if error %}: {{ error }}{% endif %}. Type the names as Lemonade knows them, or come back once the server answers.
+    </div>
+  {% endif %}
+
+  {{ modelField('chatModel', 'Chat model', 'Chats, briefings and the checks on scheduled notifications all use it. One that understands tool calls works best.',
+    current.chat, groups.chat if groups else null, false, chatRequired and groups) }}
+
+  {{ modelField('embeddingModel', 'Embedding model', 'Finds memories and tasks by meaning. Memories need one; without it, tasks are found by their words only.',
+    current.embedding, groups.embedding if groups else null, true, false) }}
+
+  {{ modelField('imageModel', 'Image model', 'For making pictures in chats. None leaves that out.',
+    current.image, groups.image if groups else null, true, false) }}
+
+  <div>
+    <label for="imageSize" class="block text-sm font-medium">Image size</label>
+    <p class="mt-0.5 mb-1 text-xs text-gray-500">What the image model is asked for.</p>
+    <select id="imageSize" name="imageSize" class="{{ inputClass }}">
+      {% for size in ['256x256', '512x512', '768x768'] %}
+        <option value="{{ size }}" {% if size == current.imageSize %}selected{% endif %}>{{ size }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  {{ modelField('pageReaderModel', 'Page reader', 'A MinerU-HTML model that picks the main content out of web pages before the chat model reads them. None converts pages directly.',
+    current.pageReader, groups.pageReader if groups else null, true, false) }}
+{% endmacro %}

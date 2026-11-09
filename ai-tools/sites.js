@@ -1,4 +1,4 @@
-// The sites read_web_page may read are a list of domains in config.js (tools.webDomains), shared by
+// The sites read_web_page may read are a list of domains in Admin → Tools (tools.webDomains), shared by
 // every chat. A page is allowed when its host is a listed domain or a subdomain of one.
 //
 // Some sites read better with a few extras, applied whenever a listed domain has an entry here:

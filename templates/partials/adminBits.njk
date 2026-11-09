@@ -1,0 +1,44 @@
+{# Pieces the Admin pages share #}
+
+{# One line of a definition list: a label and its value #}
+{% macro fact(label, value) %}
+  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 px-4 py-2">
+    <dt class="w-40 shrink-0 text-xs text-gray-500">{{ label }}</dt>
+    <dd class="flex-1 min-w-0 text-sm wrap-break-word">{{ value }}</dd>
+  </div>
+{% endmacro %}
+
+{# What a section shows when its Lemonade call failed #}
+{% macro failed(error) %}
+  <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">{{ error }}</div>
+{% endmacro %}
+
+{# The heading of a settings page: its name and a line on what it's for #}
+{% macro pageHeader(title, text) %}
+  <div class="max-w-3xl">
+    <h1 class="text-2xl font-bold">{{ title }}</h1>
+    <p class="mt-1 mb-6 text-sm text-gray-500">{{ text }}</p>
+  </div>
+{% endmacro %}
+
+{# A white card with a bold heading and a line of help, holding a form's fields #}
+{% macro card(title, text) %}
+  <fieldset class="bg-white rounded-lg shadow-sm">
+    <div class="px-4 py-3 border-b border-gray-200">
+      <legend class="font-bold">{{ title }}</legend>
+      <p class="mt-0.5 text-xs text-gray-500">{{ text }}</p>
+    </div>
+    <div class="px-4 py-3 space-y-3">
+      {{ caller() }}
+    </div>
+  </fieldset>
+{% endmacro %}
+
+{# The bar along the bottom with the Save button, for the form with `formId` #}
+{% macro saveBar(formId) %}
+  <div class="shrink-0 px-4 py-3 sm:px-8 bg-white border-t border-gray-200">
+    <div class="max-w-3xl">
+      <button type="submit" form="{{ formId }}" class="px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Save</button>
+    </div>
+  </div>
+{% endmacro %}

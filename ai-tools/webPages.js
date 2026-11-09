@@ -5,15 +5,15 @@ import { extrasFor } from './sites.js'
 import { readToolUrl } from './arguments.js'
 import prompts from '../lib/prompts.js'
 
-// read_web_page: reads a page on one of the sites listed in config.js, as Markdown (see
+// read_web_page: reads a page on one of the sites listed in Admin → Tools, as Markdown (see
 // webReader.js and sites.js)
 
-// The sites listed in config.js, for every chat, whether web pages are on or off
+// The sites listed in Admin → Tools, for every chat, whether web pages are on or off
 export const getWebDomains = function () {
   return config.tools?.webDomains ?? []
 }
 
-// Web pages are on unless switched off in config.js, where the list of sites stays for when
+// Web pages are on unless switched off in Admin → Tools, where the list of sites stays for when
 // they're switched back on
 export const isWebPagesOn = function () {
   return config.tools?.webPages !== false
@@ -36,7 +36,7 @@ export const getReadableDomains = function () {
   return getWebDomains()
 }
 
-// read_web_page's definition names the sites it can read, as they are in config.js
+// read_web_page's definition names the sites it can read, as they are in Admin → Tools
 const buildReadWebPageTool = function () {
   const domains = getReadableDomains()
 
@@ -96,9 +96,9 @@ const runReadWebPage = async function ({ argumentsText, toolSettings, signal }) 
 
   const domains = getReadableDomains()
 
-  // Web pages can be switched off, or the list emptied, in config.js part way through a conversation
+  // Web pages can be switched off, or the list emptied, in Admin → Tools part way through a conversation
   if (domains.length === 0) {
-    return { content: `Reading web pages is turned off in config.js.`, imageId: null }
+    return { content: `Reading web pages is turned off in Admin → Tools.`, imageId: null }
   }
 
   const page = await webReader.readPage({ url: url.trim(), domains, readerModel: toolSettings.pageReaderModel, signal })
@@ -118,8 +118,8 @@ const runReadWebPage = async function ({ argumentsText, toolSettings, signal }) 
 export const tools = [
   {
     name: `read_web_page`,
-    // In every chat's tools, but offered only while config.js lists some sites (see
-    // buildReadWebPageTool). The page reader is as config.js had it when the message started.
+    // In every chat's tools, but offered only while Admin → Tools lists some sites (see
+    // buildReadWebPageTool). The page reader is as Admin → Tools had it when the message started.
     settings: () => ({ pageReaderModel: getPageReaderModel() }),
     definition: buildReadWebPageTool,
     run: runReadWebPage,

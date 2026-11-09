@@ -7,12 +7,12 @@ import prompts from '../lib/prompts.js'
 // the user (see lib/memories.js). Pinned memories are given to it at the start of every chat
 // (buildMemoriesMessage); the rest it searches for by meaning.
 
-// The model memories are searched with, from config.js; they can't be searched without one
+// The model memories are searched with, from Admin → Models; they can't be searched without one
 export const getEmbeddingModel = function () {
   return config.models?.embedding ?? null
 }
 
-// Off until switched on in config.js, which needs an embedding model there too
+// Off until switched on in Admin → Tools, which needs an embedding model in Admin → Models too
 export const isMemoriesOn = function () {
   return config.tools?.memories === true && getEmbeddingModel() != null
 }

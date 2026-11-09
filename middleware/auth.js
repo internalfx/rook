@@ -14,6 +14,11 @@ export default async function (ctx, next) {
     }
 
     if (ctx.state.user == null) {
+      // Until the first account exists there's nothing to log in to: the setup pages make it
+      if (users.hasUsers() === false) {
+        return ctx.redirect(`/setup`)
+      }
+
       console.log(`USER NOT LOGGED IN`)
       ctx.writeSession(`redirectAfterLogin`, ctx.path)
       return ctx.redirect(`/auth/login`)

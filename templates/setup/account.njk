@@ -1,0 +1,38 @@
+{% extends "layouts/minimal" %}
+
+{% block body %}
+<form method="post" action="/setup/account" class="bg-white rounded-lg shadow-md p-8 lg:p-12 space-y-5">
+  <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Step 4 of 4 · Your account</p>
+  <h1 class="text-xl font-bold">Make your account</h1>
+  <p class="text-sm text-gray-700">This is the admin's account: it sees the Admin page, where the server, models and tools are changed. Other people's accounts are made on the server with <code class="font-mono text-xs">bun scripts/users.js</code>.</p>
+
+  {# The browser's time zone, so dates come out right from the first chat; changeable in Settings #}
+  <input type="hidden" name="timeZone" x-data x-init="$el.value = Intl.DateTimeFormat().resolvedOptions().timeZone">
+
+  <div>
+    <label class="text-xs" for="name">Name</label>
+    <input name="name" id="name" type="text" value="{{ name or '' }}" required autofocus autocomplete="name"
+      class="w-full focus:ring-0 focus:border-gray-600 p-2 text-sm border border-gray-300 rounded-lg">
+  </div>
+  <div>
+    <label class="text-xs" for="email">Email</label>
+    <input name="email" id="email" type="email" value="{{ email or '' }}" required autocomplete="username" placeholder="you@example.com"
+      class="w-full focus:ring-0 focus:border-gray-600 p-2 text-sm border border-gray-300 rounded-lg">
+  </div>
+  <div>
+    <label class="text-xs" for="password">Password</label>
+    <input name="password" id="password" type="password" required minlength="{{ passwordMinLength }}" autocomplete="new-password" placeholder="At least {{ passwordMinLength }} characters"
+      class="w-full focus:ring-0 focus:border-gray-600 p-2 text-sm border border-gray-300 rounded-lg">
+  </div>
+  <div>
+    <label class="text-xs" for="confirm">Password again</label>
+    <input name="confirm" id="confirm" type="password" required minlength="{{ passwordMinLength }}" autocomplete="new-password"
+      class="w-full focus:ring-0 focus:border-gray-600 p-2 text-sm border border-gray-300 rounded-lg">
+  </div>
+
+  <div class="flex items-center gap-3">
+    <button type="submit" class="px-5 py-3 text-md font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Create my account</button>
+    <a href="/setup/models" class="text-sm text-gray-500 underline hover:text-gray-800">Back</a>
+  </div>
+</form>
+{% endblock body %}

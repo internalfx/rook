@@ -1,7 +1,7 @@
 
-// Manages rook's users: adds one, resets a password, makes or unmakes an admin, removes one with
-// everything that's theirs, or lists them. There's no sign-up page, so this is how accounts are
-// made.
+// Manages rook's users from the server: adds one, resets a password, makes or unmakes an admin,
+// removes one with everything that's theirs, or lists them. Admin → Users does the same in the
+// browser; this is for when no admin can log in, such as a lost admin password.
 //   bun scripts/users.js
 //
 // It opens data/rook.db, which is fine while the server is running. A removed user's browsers are
@@ -20,8 +20,8 @@ const askPassword = async function () {
     throw new Error(`The passwords don't match.`)
   }
 
-  if (answers.password.length < 10) {
-    throw new Error(`The password needs at least 10 characters.`)
+  if (answers.password.length < users.passwordMinLength) {
+    throw new Error(`The password needs at least ${users.passwordMinLength} characters.`)
   }
 
   return answers.password
@@ -63,7 +63,7 @@ const listUsers = function () {
 
 const addUser = async function () {
   // The first account is the admin's: there'd be no one else to make it one
-  const isFirst = users.listUsers().length === 0
+  const isFirst = users.hasUsers() === false
 
   if (isFirst) {
     console.log(`There are no users yet, so this one will be an admin.`)

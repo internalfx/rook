@@ -1,0 +1,16 @@
+{% extends "layouts/minimal" %}
+
+{% block body %}
+<div class="bg-white rounded-lg shadow-md p-8 lg:p-12 space-y-5">
+  <p class="text-xs font-semibold uppercase tracking-wide text-gray-500">Step 1 of 4 · Welcome</p>
+  <h1 class="text-xl font-bold">Let's set ROOK up</h1>
+  <p class="text-sm text-gray-700">ROOK is a planner and assistant that runs on your own models. Nothing's set yet, so this takes you through the three things it needs. A few minutes, and you can change any of it later from the Admin page.</p>
+  <ol class="list-decimal pl-5 space-y-1.5 text-sm text-gray-700">
+    <li><span class="font-medium">The Lemonade server</span> that runs the models: its address, and a key if it wants one.</li>
+    <li><span class="font-medium">Which models to use</span>, chosen from what that server has.</li>
+    <li><span class="font-medium">Your account</span>, which will be the admin's.</li>
+  </ol>
+  <p class="text-xs text-gray-500">Until an account exists, anyone who can reach this address can make it, so it's best not to leave this page waiting.</p>
+  <a href="/setup/lemonade" class="inline-flex items-center px-5 py-3 text-md font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Let's go</a>
+</div>
+{% endblock body %}

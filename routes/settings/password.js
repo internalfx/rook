@@ -3,9 +3,9 @@ import users from '../../lib/users.js'
 
 // The Change password page, its own page so Settings has no password box for browsers to offer
 // to save. The current password is asked for, so a browser left logged in can't change it. Other
-// browsers stay logged in; to log them out, a user is removed with scripts/users.js.
+// browsers stay logged in; to log them out, an admin removes the user on Admin → Users.
 export const GET = async function (ctx) {
-  ctx.body = ctx.nunjucks(`settings/password`)
+  ctx.body = ctx.nunjucks(`settings/password`, { passwordMinLength: users.passwordMinLength })
 }
 
 export const POST = async function (ctx) {
@@ -14,7 +14,7 @@ export const POST = async function (ctx) {
   try {
     args = await joi.object({
       currentPassword: joi.string().required(),
-      newPassword: joi.string().min(8).required(),
+      newPassword: joi.string().min(users.passwordMinLength).required(),
       confirmPassword: joi.string().required(),
     }).validateAsync(ctx.request.body)
   } catch (err) {

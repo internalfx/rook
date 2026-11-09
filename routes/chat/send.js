@@ -238,7 +238,7 @@ const runToolCalls = async function ({ toolCalls, user, chat, chatTools, history
 //   { type: "title", title }                              a new chat's title
 //   { type: "error", message }
 // After tool calls the model is asked again, so it can answer with the results in hand.
-// The model and tools are config.js's as the message was sent, kept for the whole reply. It runs
+// The model and tools are Admin → Models's as the message was sent, kept for the whole reply. It runs
 // on its own, whether or not a browser is watching, until it finishes or the run is stopped.
 const runConversation = async function ({ history, user, chat, model, chatTools, userText, run }) {
   const toolDefinitions = tools.getToolDefinitions(chatTools)
@@ -390,12 +390,12 @@ export const POST = async function (ctx) {
     ctx.throw(400, problem)
   }
 
-  // Every chat uses the models and tools in config.js
+  // Every chat uses the models and tools in Admin → Models
   const model = config.models.chat
   const chatTools = tools.getChatTools(user)
 
   if (model == null) {
-    ctx.throw(400, `Name a chat model in config.js first.`)
+    ctx.throw(400, `Choose a chat model in Admin → Models first.`)
   }
 
   let chat = null
@@ -434,7 +434,7 @@ export const POST = async function (ctx) {
   }
 
   if (buffers.length > 0 && seesImages === false) {
-    ctx.throw(400, `This chat model can't see images. Name one that can in config.js.`)
+    ctx.throw(400, `This chat model can't see images. Choose one that can in Admin → Models.`)
   }
 
   if (chat == null) {

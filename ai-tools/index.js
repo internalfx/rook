@@ -10,14 +10,14 @@ import notifications from './notifications.js'
 import { readCallDetails } from './arguments.js'
 
 // Tools the chat model can call, as OpenAI-style function definitions. Every chat has the tools
-// config.js gives right now, as an object keyed by tool name ("chat tools", see getChatTools):
+// Admin → Tools gives right now, as an object keyed by tool name ("chat tools", see getChatTools):
 //   { generate_image: { model: `SDXL-Turbo`, size: `512x512` }, read_web_page: {} }
 //
 // Each of time.js, math.js, images.js, webPages.js, webSearch.js, memories.js, tasks.js, slack.js
 // and notifications.js gives its tools as a list of entries:
 //   name        what the model calls it
 //   settings    (user) => its settings for the user's chat right now ({} when there's nothing to
-//               set), or null when config.js leaves it out
+//               set), or null when Admin → Tools leaves it out
 //   definition  (toolSettings) => its definition for the model, or null when it can't be offered
 //               right now
 //   run         ({ argumentsText, toolSettings, user, chatId, briefingId, signal }) => { content, imageId }
@@ -43,7 +43,7 @@ const toolsByName = new Map(allTools.map(function (tool) {
   return [tool.name, tool]
 }))
 
-// The tools the user's chats have right now, and their settings, from config.js and their own
+// The tools the user's chats have right now, and their settings, from Admin → Tools and their own
 // Settings
 export const getChatTools = function (user) {
   const chatTools = {}
@@ -83,9 +83,9 @@ export const runTool = async function ({ name, argumentsText, chatTools, user, c
   const toolSettings = Object.hasOwn(chatTools, name) ? chatTools[name] : null
 
   // Only these tools are offered, so this catches a model inventing a name, or calling a tool
-  // from earlier in the conversation that has since been turned off in config.js
+  // from earlier in the conversation that has since been turned off in Admin → Tools
   if (toolSettings == null) {
-    return { content: `${name} is turned off in config.js.`, imageId: null }
+    return { content: `${name} is turned off in Admin → Tools.`, imageId: null }
   }
 
   const tool = toolsByName.get(name)

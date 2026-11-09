@@ -6,9 +6,18 @@
   { href: '/notifications', label: 'Notifications', icon: 'icon-bell' },
   { href: '/settings', label: 'Settings', icon: 'icon-settings' }
 ] -%}
-{# The Admin page is admins' alone (see middleware/auth.js) #}
+{# The Admin pages are admins' alone (see middleware/auth.js). They sit in a group that opens and
+   closes; it's drawn open on the admin pages themselves. #}
+{% set onAdminPage = ctx.path == '/admin' or ctx.path.startsWith('/admin/') %}
 {% if ctx.state.user and ctx.state.user.isAdmin %}
-  {% set nav = nav.concat([{ href: '/admin', label: 'Admin', icon: 'icon-admin' }]) -%}
+  {% set nav = nav.concat([{ label: 'Admin', icon: 'icon-admin', key: 'admin', children: [
+    { href: '/admin', label: 'Overview', icon: 'icon-overview', exact: true },
+    { href: '/admin/users', label: 'Users', icon: 'icon-users' },
+    { href: '/admin/lemonade', label: 'Lemonade', icon: 'icon-server' },
+    { href: '/admin/models', label: 'Models', icon: 'icon-models' },
+    { href: '/admin/tools', label: 'Tools', icon: 'icon-tools' },
+    { href: '/admin/briefings', label: 'Briefings', icon: 'icon-schedule' }
+  ] }]) -%}
 {% endif -%}
 <!DOCTYPE html>
 <html>
@@ -47,15 +56,27 @@
       document.addEventListener(`alpine:init`, () => {
         // `indicators` is what the server rendered the nav dots and the tasks badge with:
         // { briefingIsNew, notificationsUnseen, tasksBadge }
-        Alpine.data(`layout`, (indicators) => ({
+        Alpine.data(`layout`, (indicators, navOpen) => ({
           ...indicators,
 
           // Small screens only: the sidebar slides over the page and starts closed
           mobileOpen: false,
 
+          // Which nav groups are open, by their key. On a group's own pages the server renders it
+          // open and that stays; elsewhere the last choice made in this browser is used.
+          navOpen,
+
           // A page can stay open a long time (a chat does), so the indicators are asked for again
           // every so often, and as soon as the tab is looked at again
           init () {
+            for (const key of Object.keys(this.navOpen)) {
+              if (this.navOpen[key] === false) {
+                try {
+                  this.navOpen[key] = localStorage.getItem(`rook.nav.${key}`) === `open`
+                } catch (err) {}
+              }
+            }
+
             setInterval(() => this.refresh(), 30000)
 
             document.addEventListener(`visibilitychange`, () => this.refresh())
@@ -94,6 +115,14 @@
             } catch (err) {}
           },
 
+          toggleGroup (key) {
+            this.navOpen[key] = !this.navOpen[key]
+
+            try {
+              localStorage.setItem(`rook.nav.${key}`, this.navOpen[key] ? `open` : `closed`)
+            } catch (err) {}
+          },
+
           toggleSidebar () {
             const isWide = window.matchMedia(`(min-width: 64rem)`).matches
 
@@ -124,7 +153,7 @@
   </head>
 
   <body class="h-dvh flex flex-col bg-gray-100 text-gray-900"
-    x-data="layout({ briefingIsNew: {{ briefingIsNew }}, notificationsUnseen: {{ notificationsUnseen }}, tasksBadge: {{ tasksBadge }} })">
+    x-data="layout({ briefingIsNew: {{ briefingIsNew }}, notificationsUnseen: {{ notificationsUnseen }}, tasksBadge: {{ tasksBadge }} }, { admin: {{ 'true' if onAdminPage else 'false' }} })">
     <header class="h-14 shrink-0 flex items-center gap-3 px-4 bg-white border-b border-gray-200">
       <button type="button" class="-ml-1 p-1.5 rounded-md text-gray-600 hover:bg-gray-100" aria-label="Toggle navigation" @click="toggleSidebar()">
         <span class="icon-menu block size-5 bg-current" aria-hidden="true"></span>
@@ -141,6 +170,27 @@
         :class="{ '-translate-x-full': !mobileOpen }">
         <nav class="flex-1 overflow-y-auto p-3 space-y-1">
           {% for item in nav %}
+            {% if item.children %}
+              {# A group: a row that opens and closes its pages, drawn open when one of them is shown #}
+              {% set isOpen = onAdminPage %}
+              <button type="button" class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md text-gray-700 hover:bg-gray-100"
+                :aria-expanded="navOpen.{{ item.key }}" aria-expanded="{{ 'true' if isOpen else 'false' }}" @click="toggleGroup('{{ item.key }}')">
+                <span class="{{ item.icon }} inline-block size-4 shrink-0 bg-current" aria-hidden="true"></span>
+                <span class="flex-1 text-left">{{ item.label }}</span>
+                <span class="icon-chevron inline-block size-4 shrink-0 bg-current text-gray-400 transition-transform {% if isOpen %}rotate-180{% endif %}" :class="{ 'rotate-180': navOpen.{{ item.key }} }" aria-hidden="true"></span>
+              </button>
+              <div class="space-y-1" x-show="navOpen.{{ item.key }}" {% if not isOpen %}x-cloak{% endif %}>
+                {% for child in item.children %}
+                  {% set isCurrent = ctx.path == child.href or (not child.exact and ctx.path.startsWith(child.href + '/')) %}
+                  <a href="{{ child.href }}"
+                    class="flex items-center gap-2 pl-8 pr-3 py-1.5 text-sm rounded-md {% if isCurrent %}bg-sky-50 text-sky-700 font-semibold{% else %}text-gray-700 hover:bg-gray-100{% endif %}"
+                    {% if isCurrent %}aria-current="page"{% endif %}>
+                    <span class="{{ child.icon }} inline-block size-4 shrink-0 bg-current" aria-hidden="true"></span>
+                    <span class="flex-1">{{ child.label }}</span>
+                  </a>
+                {% endfor %}
+              </div>
+            {% else %}
             {% set isCurrent = ctx.path == item.href or ctx.path.startsWith(item.href + '/') %}
             <a href="{{ item.href }}"
               class="flex items-center gap-2 px-3 py-2 text-sm rounded-md {% if isCurrent %}bg-sky-50 text-sky-700 font-semibold{% else %}text-gray-700 hover:bg-gray-100{% endif %}"
@@ -167,6 +217,7 @@
                   aria-label="{{ tasksBadge }} due today or overdue" {% if tasksBadge == 0 %}style="display: none"{% endif %}>{{ tasksBadge }}</span>
               {% endif %}
             </a>
+            {% endif %}
           {% endfor %}
         </nav>
 

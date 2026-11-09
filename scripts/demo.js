@@ -9,7 +9,7 @@
 // included, so every run gives a clean set dated around today. The password is new each run and
 // printed at the end. The demo user isn't an admin.
 //
-// The account is a real one, so scheduled briefings run for it when config.js turns them on, and
+// The account is a real one, so scheduled briefings run for it when Admin → Briefings turns them on, and
 // the notification it has scheduled is checked and sent by the model when its time comes (kept in
 // rook only: the demo user has no ntfy topic).
 

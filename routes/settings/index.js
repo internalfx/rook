@@ -9,7 +9,7 @@ import users from '../../lib/users.js'
 // Settings holds what's each user's own: their time zone, where their notifications are pushed,
 // their Slack token and which Slack conversations are read, and their password
 // (routes/settings/password.js). What applies to everyone (the models, the tools and the
-// briefing schedule) is in config.js.
+// briefing schedule) is on the Admin pages.
 
 // Every zone the runtime knows, for the time zone list
 const timeZones = Intl.supportedValuesOf(`timeZone`)

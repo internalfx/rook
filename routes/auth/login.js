@@ -17,10 +17,19 @@ const verifyPassword = async function (password, passhash) {
 }
 
 export const GET = async function (ctx) {
+  // Nothing to log in to yet: the setup pages make the first account
+  if (users.hasUsers() === false) {
+    return ctx.redirect(`/setup`)
+  }
+
   ctx.body = ctx.nunjucks(`auth/login`)
 }
 
 export const POST = async function (ctx) {
+  if (users.hasUsers() === false) {
+    return ctx.redirect(`/setup`)
+  }
+
   let args
 
   try {

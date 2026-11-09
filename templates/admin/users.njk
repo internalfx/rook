@@ -1,0 +1,166 @@
+{% extends 'layouts/default' %}
+
+{% set inputClass = 'w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600' %}
+{% set smallButton = 'px-2 py-1 text-xs rounded hover:bg-gray-100 hover:text-gray-800' %}
+
+{% block body %}
+  <div class="p-4 sm:p-8" x-data="{ adding: {{ 'true' if adding else 'false' }} }">
+    <div class="flex flex-wrap items-start gap-4">
+      <div class="flex-1 min-w-0">
+        <h1 class="text-2xl font-bold">Users</h1>
+        <p class="mt-1 text-sm text-gray-500">Everyone with an account, and what Rook holds for each. Each person sets their own time zone, notifications and Slack in Settings.</p>
+      </div>
+      <button type="button" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md" x-show="!adding"
+        @click="adding = true; $nextTick(() => $refs.name.focus())">Add user</button>
+    </div>
+
+    {# Adding a user. Open from the start when a try at it failed, with what was typed kept. #}
+    <form method="post" action="/admin/users" class="mt-6 max-w-3xl bg-white rounded-lg shadow-sm" x-show="adding" {% if not adding %}x-cloak{% endif %}
+      @keydown.escape="adding = false">
+      <div class="px-4 py-3 border-b border-gray-200">
+        <h2 class="font-bold">New user</h2>
+        <p class="mt-0.5 text-xs text-gray-500">They log in with the email and password; the password can be changed here or by them in Settings.</p>
+      </div>
+      <div class="px-4 py-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <label for="name" class="block text-sm font-medium">Name</label>
+          <input id="name" name="name" type="text" value="{{ adding.name if adding else '' }}" required autocomplete="off" x-ref="name" class="{{ inputClass }}">
+        </div>
+        <div>
+          <label for="email" class="block text-sm font-medium">Email</label>
+          <input id="email" name="email" type="email" value="{{ adding.email if adding else '' }}" required autocomplete="off" spellcheck="false" autocapitalize="off" class="{{ inputClass }}">
+        </div>
+        <div>
+          <label for="password" class="block text-sm font-medium">Password</label>
+          <input id="password" name="password" type="password" required minlength="{{ passwordMinLength }}" autocomplete="new-password" placeholder="At least {{ passwordMinLength }} characters" class="{{ inputClass }}">
+        </div>
+        <div>
+          <label for="confirm" class="block text-sm font-medium">Password again</label>
+          <input id="confirm" name="confirm" type="password" required minlength="{{ passwordMinLength }}" autocomplete="new-password" class="{{ inputClass }}">
+        </div>
+        <label class="flex items-start gap-2 text-sm sm:col-span-2">
+          <input type="checkbox" name="isAdmin" class="mt-0.5 size-4 shrink-0 accent-sky-600" {% if adding and adding.isAdmin %}checked{% endif %}>
+          <span><span class="font-medium">Admin</span><span class="block text-xs text-gray-500">Sees these Admin pages and can change them.</span></span>
+        </label>
+      </div>
+      <div class="flex items-center gap-2 px-4 py-3 border-t border-gray-200">
+        <button type="submit" class="px-4 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Add</button>
+        <button type="button" class="px-3 py-2 text-sm rounded-lg hover:bg-gray-100" @click="adding = false">Cancel</button>
+      </div>
+    </form>
+
+    <section class="mt-6 bg-white rounded-lg shadow-sm">
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left text-xs text-gray-500">
+              <th class="px-4 py-2 font-medium">User</th>
+              <th class="px-2 py-2 font-medium text-right">Chats</th>
+              <th class="px-2 py-2 font-medium text-right">Messages</th>
+              <th class="px-2 py-2 font-medium text-right">Memories</th>
+              <th class="px-2 py-2 font-medium text-right">Tasks</th>
+              <th class="px-2 py-2 font-medium text-right">Notifications</th>
+              <th class="px-4 py-2 font-medium">Briefings</th>
+              <th class="px-4 py-2 font-medium"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          {% for user in userRows %}
+            {% set isSelf = user.id == ctx.state.user.id %}
+            {# Each user's rows: theirs, and under it the form for what was chosen (edit, password, remove) #}
+            <tbody class="border-t border-gray-100" x-data="{ mode: null }" @keydown.escape="mode = null">
+              <tr>
+                <td class="px-4 py-2">
+                  <span class="font-medium">{{ user.name }}</span>{% if user.isAdmin %} <span class="text-xs text-gray-500">admin</span>{% endif %}{% if isSelf %} <span class="text-xs text-gray-500">(you)</span>{% endif %}
+                  <span class="block text-xs text-gray-500 break-all">{{ user.email }} · {{ user.timeZone }}</span>
+                </td>
+                <td class="px-2 py-2 text-right tabular-nums">{{ user.chats }}</td>
+                <td class="px-2 py-2 text-right tabular-nums">{{ user.messages }}</td>
+                <td class="px-2 py-2 text-right tabular-nums">{{ user.memories }}</td>
+                <td class="px-2 py-2 text-right tabular-nums" title="{{ user.openTasks }} to do, {{ user.doneTasks }} done">{{ user.openTasks }} <span class="text-gray-500">/ {{ user.doneTasks }}</span></td>
+                <td class="px-2 py-2 text-right tabular-nums" title="{{ user.notifications }} sent, {{ user.waiting }} waiting">{{ user.notifications }} <span class="text-gray-500">/ {{ user.waiting }}</span></td>
+                <td class="px-4 py-2 text-xs text-gray-500">
+                  {% if user.lastBriefing %}Last {{ user.lastBriefing }}{% else %}None yet{% endif %}{% if user.nextBriefing %}, next {{ user.nextBriefing }}{% endif %}
+                </td>
+                <td class="px-4 py-2">
+                  <div class="flex flex-wrap items-center justify-end gap-1 text-xs text-gray-600">
+                    <button type="button" class="{{ smallButton }}" @click="mode = mode === 'edit' ? null : 'edit'; $nextTick(() => $refs.editName.focus())">Edit</button>
+                    <button type="button" class="{{ smallButton }}" @click="mode = mode === 'password' ? null : 'password'; $nextTick(() => $refs.newPassword.focus())">Reset password</button>
+                    {% if not isSelf %}
+                      {# One click, no confirmation: it's undone the same way #}
+                      <form method="post" action="/admin/users/{{ user.id }}/admin">
+                        {% if not user.isAdmin %}<input type="hidden" name="isAdmin" value="on">{% endif %}
+                        <button type="submit" class="{{ smallButton }}">{{ 'Remove admin' if user.isAdmin else 'Make admin' }}</button>
+                      </form>
+                      <button type="button" class="px-2 py-1 text-xs rounded hover:bg-red-50 hover:text-red-600" @click="mode = mode === 'remove' ? null : 'remove'; $nextTick(() => $refs.confirmEmail.focus())">Remove</button>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+
+              <tr x-cloak x-show="mode === 'edit'" class="bg-gray-50">
+                <td colspan="8" class="px-4 py-3">
+                  <form method="post" action="/admin/users/{{ user.id }}/update" class="flex flex-wrap items-end gap-3">
+                    <div class="w-56">
+                      <label for="name-{{ user.id }}" class="block text-xs font-medium">Name</label>
+                      <input id="name-{{ user.id }}" name="name" type="text" value="{{ user.name }}" required autocomplete="off" x-ref="editName" class="{{ inputClass }}">
+                    </div>
+                    <div class="w-72">
+                      <label for="email-{{ user.id }}" class="block text-xs font-medium">Email</label>
+                      <input id="email-{{ user.id }}" name="email" type="email" value="{{ user.email }}" required autocomplete="off" spellcheck="false" autocapitalize="off" class="{{ inputClass }}">
+                    </div>
+                    <button type="submit" class="px-3 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Save</button>
+                    <button type="button" class="px-3 py-2 text-sm rounded-lg hover:bg-gray-100" @click="mode = null">Cancel</button>
+                  </form>
+                </td>
+              </tr>
+
+              <tr x-cloak x-show="mode === 'password'" class="bg-gray-50">
+                <td colspan="8" class="px-4 py-3">
+                  <form method="post" action="/admin/users/{{ user.id }}/password" class="flex flex-wrap items-end gap-3">
+                    <div class="w-56">
+                      <label for="password-{{ user.id }}" class="block text-xs font-medium">New password for {{ user.name }}</label>
+                      <input id="password-{{ user.id }}" name="password" type="password" required minlength="{{ passwordMinLength }}" autocomplete="new-password" placeholder="At least {{ passwordMinLength }} characters" x-ref="newPassword" class="{{ inputClass }}">
+                    </div>
+                    <div class="w-56">
+                      <label for="confirm-{{ user.id }}" class="block text-xs font-medium">Again</label>
+                      <input id="confirm-{{ user.id }}" name="confirm" type="password" required minlength="{{ passwordMinLength }}" autocomplete="new-password" class="{{ inputClass }}">
+                    </div>
+                    <button type="submit" class="px-3 py-2 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-lg">Change password</button>
+                    <button type="button" class="px-3 py-2 text-sm rounded-lg hover:bg-gray-100" @click="mode = null">Cancel</button>
+                  </form>
+                </td>
+              </tr>
+
+              {% if not isSelf %}
+                <tr x-cloak x-show="mode === 'remove'" class="bg-red-50">
+                  <td colspan="8" class="px-4 py-3">
+                    <form method="post" action="/admin/users/{{ user.id }}/delete" class="flex flex-wrap items-end gap-3">
+                      <div class="w-full sm:w-auto sm:flex-1 min-w-64">
+                        <label for="remove-{{ user.id }}" class="block text-sm text-red-900">This deletes every chat, memory, task, briefing and notification of {{ user.name }}'s and logs them out. Type their email to go on.</label>
+                        <input id="remove-{{ user.id }}" name="confirm" type="text" placeholder="{{ user.email }}" autocomplete="off" spellcheck="false" autocapitalize="off" x-ref="confirmEmail" class="{{ inputClass }} mt-1 max-w-sm">
+                      </div>
+                      <button type="submit" class="px-3 py-2 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg">Remove</button>
+                      <button type="button" class="px-3 py-2 text-sm rounded-lg hover:bg-gray-100" @click="mode = null">Cancel</button>
+                    </form>
+                  </td>
+                </tr>
+              {% endif %}
+            </tbody>
+          {% endfor %}
+          <tfoot>
+            <tr class="border-t border-gray-200 font-medium">
+              <td class="px-4 py-2">All</td>
+              <td class="px-2 py-2 text-right tabular-nums">{{ totals.chats }}</td>
+              <td class="px-2 py-2 text-right tabular-nums">{{ totals.messages }}</td>
+              <td class="px-2 py-2 text-right tabular-nums">{{ totals.memories }}</td>
+              <td class="px-2 py-2 text-right tabular-nums">{{ totals.openTasks }} <span class="text-gray-500">/ {{ totals.doneTasks }}</span></td>
+              <td class="px-2 py-2 text-right tabular-nums">{{ totals.notifications }} <span class="text-gray-500">/ {{ totals.waiting }}</span></td>
+              <td class="px-4 py-2" colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <p class="px-4 py-2 text-xs text-gray-500 border-t border-gray-100">Tasks are to do / done; notifications are sent / waiting to be sent. Your own admin status and account are changed by another admin.</p>
+    </section>
+  </div>
+{% endblock body %}
