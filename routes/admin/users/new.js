@@ -2,6 +2,7 @@ import joi from '../../../lib/joi.js'
 import users from '../../../lib/users.js'
 
 // Admin → Users → New user. A slip keeps the name, email and admin choice, never the password.
+// The password is only for their first login: once in, they're made to choose their own.
 
 const render = function (ctx, values = { name: ``, email: ``, isAdmin: false }) {
   ctx.body = ctx.nunjucks(`admin/userNew`, { values, passwordMinLength: users.passwordMinLength })
@@ -39,8 +40,14 @@ export const POST = async function (ctx) {
     return render(ctx, kept)
   }
 
-  const user = await users.createUser({ name: args.name, email: args.email, password: args.password, isAdmin: kept.isAdmin })
+  const user = await users.createUser({
+    name: args.name,
+    email: args.email,
+    password: args.password,
+    isAdmin: kept.isAdmin,
+    mustChangePassword: true,
+  })
 
-  ctx.addFlash(`Added ${user.name}${user.isAdmin ? ` as an admin` : ``}. They log in with ${user.email} and the password.`, `success`)
+  ctx.addFlash(`Added ${user.name}${user.isAdmin ? ` as an admin` : ``}. They log in with ${user.email} and the password, then choose their own.`, `success`)
   return ctx.redirect(`/admin/users`)
 }

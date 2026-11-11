@@ -150,7 +150,7 @@ A bad value stops the server at startup with a message saying what's wrong. A mo
 
 ## Users
 
-The setup wizard makes the first account, the admin's. There's no sign-up page: an admin adds the rest from Admin → Users, where each user has a page of their own. **Add user** asks for a name, email, password and whether they're an admin. A user's **Edit** page changes their name, email and admin status, and removes them along with everything that's theirs, after their email is typed in to confirm. **Password** sets a new one. Passwords need at least 10 characters, and an admin's own admin status and account are another admin's to change, so no one can lock themselves out.
+The setup wizard makes the first account, the admin's. There's no sign-up page: an admin adds the rest from Admin → Users, where each user has a page of their own. **Add user** asks for a name, email, password and whether they're an admin. A user's **Edit** page changes their name, email and admin status, and removes them along with everything that's theirs, after their email is typed in to confirm. **Password** sets a new one and logs them out everywhere. A password an admin picks for someone else, on either page, is only for getting in: after logging in with it they're asked to choose their own. Passwords need at least 10 characters, and an admin's own admin status and account are another admin's to change, so no one can lock themselves out.
 
 When no admin can log in, such as after a lost admin password, the same things can be done on the server:
 

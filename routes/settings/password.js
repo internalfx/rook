@@ -2,8 +2,8 @@ import joi from '../../lib/joi.js'
 import users from '../../lib/users.js'
 
 // Settings → Password. The current password is asked for, so a browser left logged in can't
-// change it. Other browsers stay logged in; to log them out, an admin removes the user on
-// Admin → Users.
+// change it. Other browsers stay logged in; to log them out, an admin sets the user a new
+// password on Admin → Users.
 export const GET = async function (ctx) {
   ctx.body = ctx.nunjucks(`settings/password`, { passwordMinLength: users.passwordMinLength })
 }

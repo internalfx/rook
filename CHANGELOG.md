@@ -41,6 +41,9 @@ versions follow [Semantic Versioning](https://semver.org).
   Notifications, People and Password. Each page saves only what's on it.
 - Passwords need at least 10 characters everywhere: the setup wizard, Change password, Admin →
   Users and `bun scripts/users.js`
+- A password an admin picks for someone else on Admin → Users is temporary: the user chooses
+  their own the next time they log in, and can't use anything until they have. Resetting a
+  password also logs that user out everywhere, where before their browsers stayed logged in.
 
 - config.js is gone. What's decided at deploy time comes from environment variables with
   defaults (ROOK_PORT, ROOK_HOST, ROOK_ENV, ROOK_TRUST_PROXY, ROOK_DATA_DIR); everything else is

@@ -49,7 +49,7 @@ const { default: users } = await import(`../lib/users.js`)
 const passhash = await Bun.password.hash(`rook-test`)
 const now = new Date().toISOString()
 
-db.run(`UPDATE users SET email = 'test@rook.local', name = 'Test User', passhash = $passhash, updatedAt = $now WHERE id = 1`, { passhash, now })
+db.run(`UPDATE users SET email = 'test@rook.local', name = 'Test User', passhash = $passhash, mustChangePassword = 0, updatedAt = $now WHERE id = 1`, { passhash, now })
 db.run(`DELETE FROM users WHERE email = 'test2@rook.local'`)
 await users.createUser({ name: `Second User`, email: `test2@rook.local`, password: `rook-test` })
 

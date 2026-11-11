@@ -11,6 +11,9 @@ addRoute(metaRouter, null, `/**`, { ...defaultMeta })
 
 // META ROUTES
 addRoute(metaRouter, null, `/auth/**`, { ...defaultMeta, secure: false })
+// Where a user whose password an admin picked chooses their own. It needs them logged in, and is
+// the one page such a user is let onto (see middleware/auth.js).
+addRoute(metaRouter, null, `/auth/password`, { ...defaultMeta, passwordChange: true })
 
 // The setup pages run before anyone can log in; the last one, after the account is made, needs it
 addRoute(metaRouter, null, `/setup/**`, { ...defaultMeta, secure: false })

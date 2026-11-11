@@ -1,10 +1,14 @@
 import joi from '../../../../lib/joi.js'
 import users from '../../../../lib/users.js'
 
-// Admin → Users → a user's new password. Their browsers stay logged in.
+// Admin → Users → a user's new password. Someone else's is temporary: their browsers are logged
+// out, and after logging in with it they're made to choose their own. The admin's own is simply
+// changed, and they stay logged in.
 
 const render = function (ctx, user) {
-  ctx.body = ctx.nunjucks(`admin/userPassword`, { user, passwordMinLength: users.passwordMinLength })
+  const isSelf = user.id === ctx.state.user.id
+
+  ctx.body = ctx.nunjucks(`admin/userPassword`, { user, isSelf, passwordMinLength: users.passwordMinLength })
 }
 
 export const GET = async function (ctx) {
@@ -41,8 +45,15 @@ export const POST = async function (ctx) {
     return render(ctx, user)
   }
 
-  await users.setPassword(user.id, args.password)
+  if (user.id === ctx.state.user.id) {
+    await users.setPassword(user.id, args.password)
 
-  ctx.addFlash(`Password changed for ${user.name}. They stay logged in where they are.`, `success`)
+    ctx.addFlash(`Your password was changed.`, `success`)
+    return ctx.redirect(`/admin/users`)
+  }
+
+  await users.setTemporaryPassword(user.id, args.password)
+
+  ctx.addFlash(`Password changed for ${user.name}. They've been logged out, and will choose their own the next time they log in.`, `success`)
   return ctx.redirect(`/admin/users`)
 }
