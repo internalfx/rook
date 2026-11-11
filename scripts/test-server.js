@@ -6,7 +6,8 @@
 // data/rook.db, made in data/test/ each time it starts. Log in as test@rook.local with the
 // password rook-test to see a copy of user 1's data, or as test2@rook.local, also with rook-test,
 // as a second user who has nothing yet. It only listens on this machine, scheduled briefings
-// don't run, and pushes to the phone are off.
+// don't run, and pushes to the phone are off. Task requests between the two are still reviewed,
+// since nothing else would ever answer one.
 
 import fs from 'node:fs'
 import path from 'node:path'
@@ -56,3 +57,12 @@ db.run(`DELETE FROM sessions`)
 db.run(`DELETE FROM userSettings WHERE key IN ('ntfyUrl', 'ntfyToken')`)
 
 await import(`../app.js`)
+
+// The cron jobs are off here, so the reviews of task requests get a timer of their own
+const { default: requestReviews } = await import(`../services/requestReviews.js`)
+
+setInterval(function () {
+  requestReviews.reviewWaiting().catch(function (err) {
+    console.error(`Reviewing task requests failed`, err)
+  })
+}, 15000)

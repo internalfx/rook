@@ -26,8 +26,13 @@
 {% endblock %}
 
 {% block body %}
-  {# The priority and due date, as small labels beside a task #}
+  {# Who asked for it, when another user did, then the priority and due date, as small labels
+     beside a task or a task request #}
   {% macro taskLabels(task) %}
+    {% if task.fromName %}
+      <span class="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">From {{ task.fromName }}</span>
+    {% endif %}
+
     {% if task.priority == 'high' %}
       <span class="px-2 py-0.5 rounded-full bg-orange-100 text-orange-800">High</span>
     {% elif task.priority == 'low' %}
@@ -109,6 +114,11 @@
             </div>
           {% endif %}
 
+          {# One the model accepted from another user, with why #}
+          {% if task.acceptedBy == 'model' %}
+            <p class="mt-0.5 text-xs text-gray-500 wrap-break-word">Accepted for you by Rook{% if task.acceptNote %}: {{ task.acceptNote }}{% endif %}</p>
+          {% endif %}
+
           <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
             {{ taskLabels(task) }}
 
@@ -140,6 +150,10 @@
             <textarea id="task-{{ task.id }}-complete-note" name="doneNote" rows="2" maxlength="{{ maxDoneNoteLength }}"
               placeholder="Completion note (optional): how it went, anything left over, or why it no longer applies"
               class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"></textarea>
+
+            {% if task.fromName %}
+              <p class="text-xs text-gray-500">{{ task.fromName }} asked for this, and will see that it's done, with this note.</p>
+            {% endif %}
 
             <div class="flex justify-end gap-2">
               <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="completing = false; $refs.completeForm.reset()">Cancel</button>
@@ -212,12 +226,120 @@
 
         <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
           <span>Done {{ task.doneLabel }}</span>
+          {% if task.fromName %}
+            <span class="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">From {{ task.fromName }}</span>
+          {% endif %}
           <span class="flex-1"></span>
           {% call deleteControls(task, returnTo) %}
             <button type="button" x-show="!editingNote" class="px-2 py-1 rounded hover:bg-gray-100 hover:text-gray-800"
               @click="editingNote = true; $nextTick(() => $refs.noteForm.elements.doneNote.focus())">{{ 'Edit note' if task.doneNote else 'Add note' }}</button>
           {% endcall %}
         </div>
+      </div>
+    </li>
+  {% endmacro %}
+
+  {# A task request another user sent, that's the user's to answer: one held for them, or
+     (`declined`) one the model turned down, which they can still accept #}
+  {% macro incomingRequestItem(request, declined) %}
+    <li class="px-4 py-3" x-data="{ declining: false }">
+      <p class="text-sm wrap-break-word {% if declined %}text-gray-500{% endif %}">{{ request.title }}</p>
+
+      {% if request.notes %}
+        <p class="mt-0.5 text-xs text-gray-500 whitespace-pre-wrap wrap-break-word">{{ request.notes }}</p>
+      {% endif %}
+
+      {# Why the model held or declined it; only the user is shown this #}
+      {% if declined %}
+        <p class="mt-1 text-xs text-gray-600 wrap-break-word">Rook declined it for you on {{ request.answeredLabel }}{% if request.answerNote %}: {{ request.answerNote }}{% endif %}</p>
+      {% elif request.answerNote %}
+        <p class="mt-1 text-xs text-gray-600 wrap-break-word">Rook left it for you: {{ request.answerNote }}</p>
+      {% endif %}
+
+      <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+        {{ taskLabels(request) }}
+        <span>Sent {{ request.sentLabel }}</span>
+        <span class="flex-1"></span>
+
+        <div x-show="!declining" class="flex items-center gap-1">
+          {% if not declined %}
+            <button type="button" class="px-2 py-1 rounded hover:bg-red-50 hover:text-red-600"
+              @click="declining = true; $nextTick(() => $refs.reason.focus())">Decline</button>
+          {% endif %}
+          <form method="post" action="/tasks/requests/{{ request.id }}/accept">
+            {% if declined %}
+              <button type="submit" class="px-2 py-1 rounded hover:bg-sky-50 hover:text-sky-600">Accept anyway</button>
+            {% else %}
+              <button type="submit" class="px-2 py-1 font-bold text-white bg-sky-500 hover:bg-sky-600 rounded">Accept</button>
+            {% endif %}
+          </form>
+        </div>
+      </div>
+
+      {% if not declined %}
+        {# Declining takes a second click, and can say why. Cancel clears what was typed. #}
+        <form x-cloak x-show="declining" x-ref="declineForm" method="post" action="/tasks/requests/{{ request.id }}/decline" class="mt-2 space-y-2"
+          @keydown.escape="declining = false; $refs.declineForm.reset()">
+          <label class="sr-only" for="request-{{ request.id }}-reason">Reason</label>
+          <textarea x-ref="reason" id="request-{{ request.id }}-reason" name="reason" rows="2" maxlength="{{ maxReasonLength }}"
+            placeholder="Reason (optional). {{ request.fromName }} will see it."
+            class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600"></textarea>
+
+          <div class="flex justify-end gap-2">
+            <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="declining = false; $refs.declineForm.reset()">Cancel</button>
+            <button type="submit" class="px-3 py-1.5 text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-md">Decline</button>
+          </div>
+        </form>
+      {% endif %}
+    </li>
+  {% endmacro %}
+
+  {# A task request the user sent someone, with where it stands #}
+  {% macro sentRequestItem(request) %}
+    {% set isOpen = request.state == 'reviewing' or request.state == 'waiting' or request.state == 'accepted' %}
+    <li class="px-4 py-3">
+      <p class="text-sm wrap-break-word {% if not isOpen %}text-gray-500{% endif %} {% if request.state == 'done' %}line-through{% endif %}">{{ request.title }}</p>
+
+      {% if request.notes %}
+        <p class="mt-0.5 text-xs text-gray-500 whitespace-pre-wrap wrap-break-word line-clamp-3">{{ request.notes }}</p>
+      {% endif %}
+
+      {# What the other person wrote back: their completion note, or why they declined #}
+      {% if request.doneNote %}
+        <p class="mt-1 text-xs text-gray-600 whitespace-pre-wrap wrap-break-word">{{ request.toName }}: {{ request.doneNote }}</p>
+      {% elif request.declineReason %}
+        <p class="mt-1 text-xs text-gray-600 whitespace-pre-wrap wrap-break-word">{{ request.toName }}: {{ request.declineReason }}</p>
+      {% endif %}
+
+      <div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-gray-500">
+        <span class="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">To {{ request.toName }}</span>
+
+        {% if request.state == 'reviewing' %}
+          <span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">Their Rook is looking at it</span>
+        {% elif request.state == 'waiting' %}
+          <span class="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800">Waiting for {{ request.toName }}</span>
+        {% elif request.state == 'accepted' %}
+          <span class="px-2 py-0.5 rounded-full bg-sky-50 text-sky-700">On their list since {{ request.answeredLabel }}</span>
+        {% elif request.state == 'done' %}
+          <span class="px-2 py-0.5 rounded-full bg-green-50 text-green-700">Done {{ request.doneLabel }}</span>
+        {% elif request.state == 'declined' %}
+          <span class="px-2 py-0.5 rounded-full bg-red-50 text-red-700">Declined {{ request.answeredLabel }}{% if request.answeredBy == 'model' %} by their Rook{% endif %}</span>
+        {% else %}
+          <span class="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">Accepted, then removed from their list</span>
+        {% endif %}
+
+        {% if isOpen %}
+          {{ taskLabels(request) }}
+        {% endif %}
+
+        <span>Sent {{ request.sentLabel }}</span>
+        <span class="flex-1"></span>
+
+        {% if request.state == 'reviewing' or request.state == 'waiting' %}
+          <form method="post" action="/tasks/requests/{{ request.id }}/withdraw">
+            <button type="submit" class="px-2 py-1 rounded hover:bg-red-50 hover:text-red-600">Withdraw</button>
+          </form>
+        {% endif %}
       </div>
     </li>
   {% endmacro %}
@@ -235,6 +357,25 @@
         <div class="flex flex-wrap items-center gap-3 p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
           <span class="flex-1">Tasks are off in Admin → Tools, so the chat model can't see or change them.</span>
         </div>
+      {% endif %}
+
+      {# Task requests from other users that are the user's to answer #}
+      {% if heldRequests.length > 0 or declinedRequests.length > 0 %}
+        <section class="bg-white rounded-lg shadow-sm">
+          <div class="px-4 py-3 border-b border-gray-200">
+            <h2 class="font-bold">Asked of you</h2>
+            <p class="mt-0.5 text-xs text-gray-500">Tasks other people here have asked you to do. Rook looks at each one first, going by <a href="/settings/people" class="underline hover:text-gray-800">your note about them</a>; these it left for you, or declined in the last {{ recentDays }} days.</p>
+          </div>
+
+          <ul class="divide-y divide-gray-100">
+            {% for request in heldRequests %}
+              {{ incomingRequestItem(request, false) }}
+            {% endfor %}
+            {% for request in declinedRequests %}
+              {{ incomingRequestItem(request, true) }}
+            {% endfor %}
+          </ul>
+        </section>
       {% endif %}
 
       {# Finds tasks by meaning with the embedding model, as the chat model does #}
@@ -316,6 +457,25 @@
 
             <p class="px-4 py-2 text-xs text-gray-500 border-t border-gray-100">
               {% if doneCount > doneTasks.length %}Showing the {{ doneTasks.length }} done most recently. {% endif %}Done tasks are deleted {{ doneKeptDays }} days after they're done.
+            </p>
+          </details>
+        {% endif %}
+
+        {# What the user has asked of other users; open while any is still to be done #}
+        {% if sentRequests.length > 0 %}
+          <details class="bg-white rounded-lg shadow-sm" {% if sentOpenCount > 0 %}open{% endif %}>
+            <summary class="px-4 py-3 text-sm font-bold cursor-pointer select-none">
+              Asked of others <span class="font-normal text-gray-500">· {{ sentOpenCount }} open</span>
+            </summary>
+
+            <ul class="border-t border-gray-200 divide-y divide-gray-100">
+              {% for request in sentRequests %}
+                {{ sentRequestItem(request) }}
+              {% endfor %}
+            </ul>
+
+            <p class="px-4 py-2 text-xs text-gray-500 border-t border-gray-100">
+              Ask someone in a chat, e.g. “ask Dana to order paper by Friday”. Their Rook looks at each request first. Declined and done ones are removed after {{ doneKeptDays }} days.
             </p>
           </details>
         {% endif %}

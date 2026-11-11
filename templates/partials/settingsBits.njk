@@ -1,0 +1,25 @@
+{# Pieces the Settings pages share, besides the page header, cards and Save bar they take from
+   partials/adminBits #}
+
+{# Goes inside a form with x-data="settingsForm" (see partials/settingsFormScript): where to go
+   once saved, and the dialog a link away from unsaved changes opens. Inside the form, so its
+   buttons are plain buttons: a <form method="dialog"> can't go in another form. A click on the
+   backdrop lands on the dialog itself, so it cancels. #}
+{% macro leaveDialog() %}
+  {# Set by the dialog's Save, so saving goes on to where the link was going #}
+  <input type="hidden" name="returnTo" x-ref="returnTo">
+
+  <dialog x-ref="leaveDialog" class="m-auto w-[calc(100%-2rem)] max-w-md p-0 rounded-lg shadow-xl backdrop:bg-black/30"
+    aria-labelledby="leave-dialog-title" @click.self="$el.close()">
+    <div class="p-5">
+      <h2 id="leave-dialog-title" class="text-base font-bold">Save your changes?</h2>
+      <p class="mt-2 text-sm text-gray-600">You have changes on this page that haven't been saved.</p>
+
+      <div class="mt-5 flex flex-wrap justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 text-sm rounded-md hover:bg-gray-100" @click="$refs.leaveDialog.close()">Cancel</button>
+        <button type="button" class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50" @click="leaveWithoutSaving()">Don't save</button>
+        <button type="button" class="px-3 py-1.5 text-sm font-bold text-white bg-sky-500 hover:bg-sky-600 rounded-md" @click="saveAndLeave()">Save</button>
+      </div>
+    </div>
+  </dialog>
+{% endmacro %}

@@ -121,8 +121,9 @@ const completeTaskTool = {
 
 // The title, notes, priority and due date the model gave add_task or update_task, checked. Each
 // is left out of `fields` when the model left it out; an empty due date removes it. Returns
-// { fields }, or { problem } saying what's wrong, to tell the model.
-const readTaskFields = function (args) {
+// { fields }, or { problem } saying what's wrong, to tell the model. request_task reads a task
+// for someone else the same way (ai-tools/taskRequests.js).
+export const readTaskFields = function (args) {
   const fields = {}
 
   if (args.title !== undefined) {
@@ -332,7 +333,14 @@ const runCompleteTask = function ({ argumentsText, user }) {
   const description = tasks.describeForModel(updated, user.timeZone)
 
   if (done) {
-    return { content: `Marked done: ${description}`, imageId: null }
+    let content = `Marked done: ${description}`
+
+    // One another user asked for (lib/taskRequests.js): they're shown how it went
+    if (updated.fromName != null) {
+      content = `${content}\n${updated.fromName}, who asked for it, can now see it's done, with the completion note.`
+    }
+
+    return { content, imageId: null }
   }
 
   return { content: `Put back on the to-do list: ${description}`, imageId: null }
@@ -370,5 +378,6 @@ export const tools = [
 
 export default {
   isTasksOn,
+  readTaskFields,
   tools,
 }

@@ -3,6 +3,8 @@ import caches from '../lib/caches.js'
 import config from '../configure.js'
 import nunjucks from '../lib/nunjucks.js'
 import indicators from '../lib/indicators.js'
+import users from '../lib/users.js'
+import aiTools from '../ai-tools/index.js'
 import dayjs from 'dayjs'
 import numeral from 'numeral'
 import _ from 'lodash'
@@ -49,10 +51,14 @@ export default async function (ctx, next) {
       _,
     }
 
-    // briefingIsNew, notificationsUnseen and tasksBadge, for the nav items
+    // Whether Settings lists its People page: only with task requests on and someone else here
+    // to send them
+    const showPeople = ctx.state.user != null && aiTools.isTaskRequestsOn() && users.countUsers() > 1
+
+    // briefingIsNew, notificationsUnseen, tasksBadge and requestsWaiting, for the nav items
     const output = nunjucks.render(
       templatePath,
-      { ...locals, ...tools, ctx, config, ...indicators.readIndicators(ctx.state.user ?? null) },
+      { ...locals, ...tools, ctx, config, showPeople, ...indicators.readIndicators(ctx.state.user ?? null) },
     )
     // console.timeEnd(label)
     return output

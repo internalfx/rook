@@ -1,0 +1,42 @@
+{% extends 'layouts/default' %}
+{% from 'partials/adminBits' import pageHeader, card, saveBar %}
+{% from 'partials/settingsBits' import leaveDialog %}
+
+{# The fields scroll above a bar along the bottom, so Save stays in reach #}
+{% block mainClass %}flex flex-col overflow-hidden{% endblock %}
+
+{% block head %}
+  {% include 'partials/settingsFormScript' %}
+{% endblock %}
+
+{% block body %}
+  <div class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8">
+    {{ pageHeader('Time zone', 'Where you are: what Rook counts as today, when a task is due, and when notifications and briefings are shown as happening.') }}
+
+    <form id="settings-form" method="post" action="/settings/timezone" class="space-y-6 max-w-3xl"
+      x-data="settingsForm" @input="checkDirty()" @change="checkDirty()" @submit="isLeaving = true">
+      {% call card('Your time zone', 'Until you choose, it\'s the server\'s, ' + serverTimeZone + '.') %}
+        <div x-data="{ browserZone: Intl.DateTimeFormat().resolvedOptions().timeZone, zone: '{{ timeZone }}' }">
+          <select id="timeZone" x-ref="timeZone" x-model="zone" name="timeZone" aria-label="Time zone"
+            class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+            {% for zone in timeZones %}
+              <option value="{{ zone }}" {% if zone == timeZone %}selected{% endif %}>{{ zone }}</option>
+            {% endfor %}
+          </select>
+
+          {# Offered when the browser is somewhere else; choosing it counts as a change to save, so
+             the form is told once the select has it #}
+          <p x-cloak x-show="browserZone !== zone" class="mt-2 text-xs text-gray-500">
+            This browser is in <span x-text="browserZone"></span>.
+            <button type="button" class="underline hover:text-gray-800"
+              @click="zone = browserZone; $nextTick(() => $refs.timeZone.dispatchEvent(new Event('change', { bubbles: true })))">Use that</button>
+          </p>
+        </div>
+      {% endcall %}
+
+      {{ leaveDialog() }}
+    </form>
+  </div>
+
+  {{ saveBar('settings-form') }}
+{% endblock body %}

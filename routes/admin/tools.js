@@ -4,7 +4,7 @@ import serverSettings from '../../lib/serverSettings.js'
 // Admin → Tools: what the chat model may do for everyone, and which sites it may read. Admins only
 // (see middleware/metaRouter.js).
 
-const switches = [`tasks`, `memories`, `webSearch`, `webPages`]
+const switches = [`tasks`, `taskRequests`, `memories`, `webSearch`, `webPages`]
 
 const render = function (ctx, tools) {
   ctx.body = ctx.nunjucks(`admin/tools`, { tools })
@@ -26,6 +26,7 @@ export const POST = async function (ctx) {
     // The posted form as the page shows it again, so a mistake doesn't lose what was typed
     return render(ctx, {
       tasks: body.tasks != null,
+      taskRequests: body.taskRequests != null,
       memories: body.memories != null,
       webSearch: body.webSearch != null,
       webPages: body.webPages != null,

@@ -7,6 +7,12 @@ versions follow [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- Task requests between users. "Ask Dana to order paper by Friday" in a chat sends the request
+  to Dana's ROOK, whose model accepts it onto her list, declines it, or leaves it for her to
+  answer, going by the note she wrote about the sender, her memories and her tasks. Settings →
+  People says who may send you requests (no one, to start with) and holds the note about each
+  person. The Tasks page shows what's been asked of you and what you've asked of others, and
+  briefings report both. Admin → Tools can turn it off.
 - A setup wizard on the first visit to a new install: the Lemonade server, the models, then the
   admin's account
 - Admin is a group in the sidebar with a page for each thing: Overview (how the Lemonade server
@@ -31,6 +37,8 @@ versions follow [Semantic Versioning](https://semver.org).
 
 ### Changed
 
+- Settings is a group in the sidebar, like Admin, with a page for each thing: Time zone, Slack,
+  Notifications, People and Password. Each page saves only what's on it.
 - Passwords need at least 10 characters everywhere: the setup wizard, Change password, Admin →
   Users and `bun scripts/users.js`
 

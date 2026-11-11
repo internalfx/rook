@@ -1,16 +1,28 @@
+{# Each user's own settings, a page for each thing, in a group that opens and closes; it's drawn
+   open on those pages themselves. People is only listed while there's someone else on this rook
+   to send task requests (showPeople, see middleware/helpers.js). #}
+{% set onSettingsPage = ctx.path == '/settings' or ctx.path.startsWith('/settings/') -%}
+{% set settingsPages = [
+  { href: '/settings/timezone', label: 'Time zone', icon: 'icon-time-zone' },
+  { href: '/settings/slack', label: 'Slack', icon: 'icon-slack' },
+  { href: '/settings/notifications', label: 'Notifications', icon: 'icon-notify-settings' }
+] -%}
+{% if showPeople -%}
+  {% set settingsPages = settingsPages.concat([{ href: '/settings/people', label: 'People', icon: 'icon-people' }]) -%}
+{% endif -%}
+{% set settingsPages = settingsPages.concat([{ href: '/settings/password', label: 'Password', icon: 'icon-password' }]) -%}
 {% set nav = [
   { href: '/briefing', label: 'Briefing', icon: 'icon-briefing' },
   { href: '/chat', label: 'Chat', icon: 'icon-chat' },
   { href: '/tasks', label: 'Tasks', icon: 'icon-tasks' },
   { href: '/memories', label: 'Memories', icon: 'icon-memories' },
   { href: '/notifications', label: 'Notifications', icon: 'icon-bell' },
-  { href: '/settings', label: 'Settings', icon: 'icon-settings' }
+  { label: 'Settings', icon: 'icon-settings', key: 'settings', open: onSettingsPage, children: settingsPages }
 ] -%}
-{# The Admin pages are admins' alone (see middleware/auth.js). They sit in a group that opens and
-   closes; it's drawn open on the admin pages themselves. #}
+{# The Admin pages are admins' alone (see middleware/auth.js), in a group of their own #}
 {% set onAdminPage = ctx.path == '/admin' or ctx.path.startsWith('/admin/') %}
 {% if ctx.state.user and ctx.state.user.isAdmin %}
-  {% set nav = nav.concat([{ label: 'Admin', icon: 'icon-admin', key: 'admin', children: [
+  {% set nav = nav.concat([{ label: 'Admin', icon: 'icon-admin', key: 'admin', open: onAdminPage, children: [
     { href: '/admin', label: 'Overview', icon: 'icon-overview', exact: true },
     { href: '/admin/users', label: 'Users', icon: 'icon-users' },
     { href: '/admin/lemonade', label: 'Lemonade', icon: 'icon-server' },
@@ -55,7 +67,7 @@
 
       document.addEventListener(`alpine:init`, () => {
         // `indicators` is what the server rendered the nav dots and the tasks badge with:
-        // { briefingIsNew, notificationsUnseen, tasksBadge }
+        // { briefingIsNew, notificationsUnseen, tasksBadge, requestsWaiting }
         Alpine.data(`layout`, (indicators, navOpen) => ({
           ...indicators,
 
@@ -112,6 +124,7 @@
               this.briefingIsNew = body.briefingIsNew
               this.notificationsUnseen = body.notificationsUnseen
               this.tasksBadge = body.tasksBadge
+              this.requestsWaiting = body.requestsWaiting
             } catch (err) {}
           },
 
@@ -153,7 +166,7 @@
   </head>
 
   <body class="h-dvh flex flex-col bg-gray-100 text-gray-900"
-    x-data="layout({ briefingIsNew: {{ briefingIsNew }}, notificationsUnseen: {{ notificationsUnseen }}, tasksBadge: {{ tasksBadge }} }, { admin: {{ 'true' if onAdminPage else 'false' }} })">
+    x-data="layout({ briefingIsNew: {{ briefingIsNew }}, notificationsUnseen: {{ notificationsUnseen }}, tasksBadge: {{ tasksBadge }}, requestsWaiting: {{ requestsWaiting }} }, { settings: {{ 'true' if onSettingsPage else 'false' }}, admin: {{ 'true' if onAdminPage else 'false' }} })">
     <header class="h-14 shrink-0 flex items-center gap-3 px-4 bg-white border-b border-gray-200">
       <button type="button" class="-ml-1 p-1.5 rounded-md text-gray-600 hover:bg-gray-100" aria-label="Toggle navigation" @click="toggleSidebar()">
         <span class="icon-menu block size-5 bg-current" aria-hidden="true"></span>
@@ -172,7 +185,7 @@
           {% for item in nav %}
             {% if item.children %}
               {# A group: a row that opens and closes its pages, drawn open when one of them is shown #}
-              {% set isOpen = onAdminPage %}
+              {% set isOpen = item.open %}
               <button type="button" class="w-full flex items-center gap-2 px-3 py-2 text-sm rounded-md text-gray-700 hover:bg-gray-100"
                 :aria-expanded="navOpen.{{ item.key }}" aria-expanded="{{ 'true' if isOpen else 'false' }}" @click="toggleGroup('{{ item.key }}')">
                 <span class="{{ item.icon }} inline-block size-4 shrink-0 bg-current" aria-hidden="true"></span>
@@ -210,8 +223,11 @@
                   {% if not notificationsUnseen %}style="display: none"{% endif %}></span>
                 <span x-show="notificationsUnseen" class="sr-only" {% if not notificationsUnseen %}style="display: none"{% endif %}>New notifications</span>
               {% endif %}
-              {# Tasks due today or overdue #}
+              {# Another user's task request is waiting for an answer, then the tasks due today or overdue #}
               {% if item.href == '/tasks' %}
+                <span x-show="requestsWaiting > 0" class="size-2 rounded-full bg-sky-500" aria-hidden="true"
+                  {% if requestsWaiting == 0 %}style="display: none"{% endif %}></span>
+                <span x-show="requestsWaiting > 0" class="sr-only" {% if requestsWaiting == 0 %}style="display: none"{% endif %}>Task requests waiting for your answer</span>
                 <span x-show="tasksBadge > 0" x-text="tasksBadge" :aria-label="`${tasksBadge} due today or overdue`"
                   class="min-w-5 px-1.5 text-center text-xs font-bold leading-5 rounded-full bg-red-500 text-white"
                   aria-label="{{ tasksBadge }} due today or overdue" {% if tasksBadge == 0 %}style="display: none"{% endif %}>{{ tasksBadge }}</span>

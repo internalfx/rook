@@ -1,0 +1,61 @@
+{% extends 'layouts/default' %}
+{% from 'partials/adminBits' import pageHeader, card, saveBar %}
+{% from 'partials/settingsBits' import leaveDialog %}
+
+{# The fields scroll above a bar along the bottom, so Save stays in reach #}
+{% block mainClass %}flex flex-col overflow-hidden{% endblock %}
+
+{% block head %}
+  {% include 'partials/settingsFormScript' %}
+{% endblock %}
+
+{% block body %}
+  <div class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8">
+    {{ pageHeader('People', 'The other people on this Rook. Someone you allow can ask you to do things: Rook looks at each request for you, going by your note about them, your memories and your tasks, and adds it to your list, declines it, or leaves it for you to answer. Everyone starts blocked, and only you see what\'s here.') }}
+
+    {% if not isTaskRequestsOn %}
+      <div class="mb-6 max-w-3xl p-4 text-sm rounded-lg border border-amber-200 bg-amber-50 text-amber-900" role="alert">
+        Task requests are off in Admin → Tools, so no one can send any for now. What you set here is kept.
+      </div>
+    {% endif %}
+
+    {% if people.length == 0 %}
+      <p class="max-w-3xl p-4 text-sm text-gray-500 bg-white rounded-lg shadow-sm">There's no one else on this Rook yet. An admin adds people in Admin → Users.</p>
+    {% endif %}
+
+    <form id="settings-form" method="post" action="/settings/people" class="space-y-6 max-w-3xl"
+      x-data="settingsForm" @input="checkDirty()" @change="checkDirty()" @submit="isLeaving = true">
+      {% for person in people %}
+        <fieldset class="bg-white rounded-lg shadow-sm">
+          <div class="flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200">
+            <div class="flex-1 min-w-0">
+              <legend class="font-bold wrap-break-word">{{ person.name }}</legend>
+              <p class="mt-0.5 text-xs text-gray-500 truncate">{{ person.email }}</p>
+            </div>
+
+            <label class="sr-only" for="level-{{ person.id }}">Task requests from {{ person.name }}</label>
+            <select id="level-{{ person.id }}" name="level-{{ person.id }}"
+              class="form-select py-2 pl-2 pr-8 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+              <option value="block" {% if not person.allowed %}selected{% endif %}>Block their requests</option>
+              <option value="allow" {% if person.allowed %}selected{% endif %}>Allow their requests</option>
+            </select>
+          </div>
+
+          <div class="px-4 py-3">
+            <label for="note-{{ person.id }}" class="block text-sm font-medium">Note for Rook</label>
+            <p class="mt-0.5 mb-1 text-xs text-gray-500">Who they are to you, and how to treat what they ask. Rook goes by it when it looks at their requests, and when you ask them for something.</p>
+            <textarea id="note-{{ person.id }}" name="note-{{ person.id }}" rows="3" maxlength="{{ maxNoteLength }}"
+              placeholder="e.g. My business partner. Accept anything about the shop; leave personal favours for me to answer."
+              class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">{{ person.note }}</textarea>
+          </div>
+        </fieldset>
+      {% endfor %}
+
+      {{ leaveDialog() }}
+    </form>
+  </div>
+
+  {% if people.length > 0 %}
+    {{ saveBar('settings-form') }}
+  {% endif %}
+{% endblock body %}

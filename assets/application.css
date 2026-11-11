@@ -94,6 +94,22 @@ table tr td {
   -webkit-mask: url(/static/icons/mdi--cog-outline.svg) center / contain no-repeat;
   mask: url(/static/icons/mdi--cog-outline.svg) center / contain no-repeat;
 }
+.icon-time-zone {
+  -webkit-mask: url(/static/icons/mdi--map-clock-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--map-clock-outline.svg) center / contain no-repeat;
+}
+.icon-notify-settings {
+  -webkit-mask: url(/static/icons/mdi--bell-cog-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--bell-cog-outline.svg) center / contain no-repeat;
+}
+.icon-people {
+  -webkit-mask: url(/static/icons/mdi--contacts-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--contacts-outline.svg) center / contain no-repeat;
+}
+.icon-password {
+  -webkit-mask: url(/static/icons/mdi--lock-outline.svg) center / contain no-repeat;
+  mask: url(/static/icons/mdi--lock-outline.svg) center / contain no-repeat;
+}
 .icon-web {
   -webkit-mask: url(/static/icons/mdi--web.svg) center / contain no-repeat;
   mask: url(/static/icons/mdi--web.svg) center / contain no-repeat;

@@ -5,6 +5,7 @@ import webPages from './webPages.js'
 import webSearch from './webSearch.js'
 import memories from './memories.js'
 import tasks from './tasks.js'
+import taskRequests from './taskRequests.js'
 import slack from './slack.js'
 import notifications from './notifications.js'
 import { readCallDetails } from './arguments.js'
@@ -13,8 +14,8 @@ import { readCallDetails } from './arguments.js'
 // Admin → Tools gives right now, as an object keyed by tool name ("chat tools", see getChatTools):
 //   { generate_image: { model: `SDXL-Turbo`, size: `512x512` }, read_web_page: {} }
 //
-// Each of time.js, math.js, images.js, webPages.js, webSearch.js, memories.js, tasks.js, slack.js
-// and notifications.js gives its tools as a list of entries:
+// Each of time.js, math.js, images.js, webPages.js, webSearch.js, memories.js, tasks.js,
+// taskRequests.js, slack.js and notifications.js gives its tools as a list of entries:
 //   name        what the model calls it
 //   settings    (user) => its settings for the user's chat right now ({} when there's nothing to
 //               set), or null when Admin → Tools leaves it out
@@ -22,7 +23,7 @@ import { readCallDetails } from './arguments.js'
 //               right now
 //   run         ({ argumentsText, toolSettings, user, chatId, briefingId, signal }) => { content, imageId }
 // `user` is whose chat or briefing it is (ctx.state.user): everything a tool reads or changes is
-// theirs alone.
+// theirs alone, but for request_task, which sends another user a request they've allowed.
 // The other files are what those need (calculator.js, webReader.js, duckduckgo.js, browser.js,
 // sites.js, arguments.js), and limits.js, how many calls the model gets.
 
@@ -35,6 +36,7 @@ const allTools = [
   ...webSearch.tools,
   ...memories.tools,
   ...tasks.tools,
+  ...taskRequests.tools,
   ...slack.tools,
   ...notifications.tools,
 ]
@@ -122,6 +124,7 @@ export default {
   buildMemoriesMessage: memories.buildMemoriesMessage,
   describeCurrentTime: time.describeCurrentTime,
   isTasksOn: tasks.isTasksOn,
+  isTaskRequestsOn: taskRequests.isTaskRequestsOn,
   getSlackChannels: slack.getSlackChannels,
   isSlackOn: slack.isSlackOn,
   describeScheduledNotification: notifications.describeScheduled,

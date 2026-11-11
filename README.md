@@ -18,6 +18,7 @@ All of it runs on a machine you control. The models run on your own [Lemonade](h
 - **Web pages and search** on the sites you allow, plus arithmetic, dates and image generation
 - **Discuss** any task, memory or notification in a chat that starts with it
 - **Multiple users**, each with their own data, on one install, managed from the browser
+- **Task requests** between those users: ask someone to do something, and their ROOK decides what to do with it, going by what they've told it about you
 
 No subscription, no cloud account, no one else's servers. Clone it, point it at your models, and it's yours.
 
@@ -128,7 +129,7 @@ Admins have an **Admin** group in the sidebar. Changes made there take effect at
 | Users | Everyone with an account and what ROOK holds for each; see [Users](#users) |
 | Lemonade | The server's address, like `http://localhost:8000`, and an API key if it wants one. Check connection tries it before saving. |
 | Models | Chat model (required; chats, briefings and the checks on scheduled notifications use it, and one that understands tool calls works best), embedding model (finds memories and tasks by meaning; memories need one), image model and size (or none), and a MinerU-HTML page reader that picks the main content out of web pages (or none). Everything the server has is listed underneath. Recommendations are under [Models](#models). |
-| Tools | Tasks, memories, web search (through DuckDuckGo in a headless Chrome), and web pages on the sites you list |
+| Tools | Tasks, task requests between users, memories, web search (through DuckDuckGo in a headless Chrome), and web pages on the sites you list |
 | Briefings | Scheduled briefings for every user, and how many minutes apart |
 
 These live in the database (`lib/serverSettings.js`), so they travel with a backup of `data/`.
@@ -157,7 +158,7 @@ When no admin can log in, such as after a lost admin password, the same things c
 bun scripts/users.js
 ```
 
-Each user sets their own things in Settings: time zone, an ntfy topic for phone notifications, a Slack token and which conversations briefings should read.
+Each user sets their own things under Settings in the sidebar, a page for each: Time zone, Slack (a token and which conversations briefings should read), Notifications (an ntfy topic for the phone), People (who may send them task requests) and Password.
 
 To see ROOK with something in it before you've used it, add the demo user:
 
@@ -167,17 +168,31 @@ bun scripts/demo.js
 
 That adds an account (demo@rook.local, with a password it prints) belonging to Bill, who runs a small print shop: chats, memories, tasks, a briefing and notifications, all made up and dated around today. Run it again for a fresh set, or with `--remove` to take the account away along with everything in it.
 
+### Task requests
+
+Users on the same install can ask each other to do things, by telling ROOK in a chat: "ask Dana to order paper by Friday". The request goes to Dana's ROOK, not to Dana. Her chat model looks at it with her context (her note about the sender, her memories, her task list) and does one of three things:
+
+- **accepts** it, which adds a task to her list, marked with who asked and why it was taken
+- **declines** it, which she can see and overrule for a week
+- **leaves** it for her to answer on the Tasks page, when her note and what it knows don't settle it
+
+Nobody can send you anything until you allow them. Settings → People lists the other users, each blocked to start with, and a note for ROOK about each: who they are to you and how to treat what they ask, like "My business partner. Accept anything about the shop; leave personal favours for me." That note is the model's main instruction, and ROOK also uses it when you send that person something. Only you see it.
+
+The sender's Tasks page and briefings show where each request stands: being looked at, waiting for an answer, on the other person's list, declined, or done, with the completion note. They never see the reasons the other person's ROOK gave, which are written with that person's memories to hand. A reason only travels when someone declines by hand and types one.
+
+A few limits keep it civil: ten requests a day from one person to another, at most one phone push an hour from one sender, and only when the model judges it can't wait for the next briefing. An admin can turn the whole thing off in Admin → Tools.
+
 ### ntfy
 
-Install the [ntfy](https://ntfy.sh) app, subscribe to a topic of your own (a hard-to-guess name), and paste the topic URL into Settings, with an access token if your ntfy server needs one. The Notifications page has a test button.
+Install the [ntfy](https://ntfy.sh) app, subscribe to a topic of your own (a hard-to-guess name), and paste the topic URL into Settings → Notifications, with an access token if your ntfy server needs one. The page has a test button.
 
 ### Slack
 
-ROOK reads Slack with each user's own user token, so it only sees what that user can. Make a Slack app for your workspace, add these user token scopes, install it, and paste the `xoxp-` token into Settings:
+ROOK reads Slack with each user's own user token, so it only sees what that user can. Make a Slack app for your workspace, add these user token scopes, install it, and paste the `xoxp-` token into Settings → Slack:
 
 `channels:history`, `channels:read`, `groups:history`, `groups:read`, `im:history`, `im:read`, `mpim:history`, `mpim:read`, `search:read`, `users:read`
 
-The model then has `read_slack` and `search_slack`, which only read; it never posts. Briefings read the conversations picked in Settings.
+The model then has `read_slack` and `search_slack`, which only read; it never posts. Briefings read the conversations picked there.
 
 ## Running as a service
 
@@ -201,7 +216,7 @@ STYLEGUIDE.md has the code conventions.
 
 ## Layout
 
-- `services/` — code that runs on its own: the cron jobs in `cron.js` and what they start
+- `services/` — code that runs on its own: the cron jobs in `cron.js` and what they start (briefings, the checks on scheduled notifications, the reviews of task requests)
 - `lib/` — code shared across the app: the database and models, the Lemonade client, the server settings, page helpers, prompts
 - `routes/` — one file per URL; every `.js` here is a public route
 - `middleware/` — the Koa middleware `substruct.js` loads

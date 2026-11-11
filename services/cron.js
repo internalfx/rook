@@ -1,6 +1,7 @@
 import cron from 'node-cron'
 import briefings from './briefings.js'
 import notificationChecks from './notificationChecks.js'
+import requestReviews from './requestReviews.js'
 import doneTasks from './doneTasks.js'
 
 // Scheduled jobs, keyed by name
@@ -22,7 +23,15 @@ jobs.notifications = cron.schedule(`* * * * *`, function () {
   })
 })
 
-// On the hour, deletes the tasks done more than doneKeptDays (lib/tasks.js) ago
+// Has the model look at the task requests users have sent each other
+jobs.requestReviews = cron.schedule(`* * * * *`, function () {
+  requestReviews.reviewWaiting().catch(function (err) {
+    console.error(`Reviewing task requests failed`, err)
+  })
+})
+
+// On the hour, deletes the tasks done more than doneKeptDays (lib/tasks.js) ago, and the task
+// requests settled that long ago
 jobs.doneTasks = cron.schedule(`0 * * * *`, function () {
   try {
     doneTasks.deleteOldDone()

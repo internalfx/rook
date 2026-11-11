@@ -1,0 +1,85 @@
+{# For the <head> of a Settings page: its form asks before leaving with unsaved changes. The form
+   takes x-data="settingsForm", tells it of changes (@input and @change call checkDirty) and of
+   saving (@submit sets isLeaving), and holds leaveDialog from partials/settingsBits. #}
+<script>
+  document.addEventListener(`alpine:init`, () => {
+    // Asks before leaving with unsaved changes. Links within rook get a dialog that can save
+    // first; anything else (closing the tab, reloading, going back) gets the browser's own prompt.
+    Alpine.data(`settingsForm`, () => ({
+      // The form as it loaded, to compare against
+      savedState: ``,
+      isDirty: false,
+      // Set when saving or choosing "Don't save", so the browser's prompt doesn't follow
+      isLeaving: false,
+      // Where the link in the dialog was going
+      leaveTo: null,
+
+      init () {
+        this.savedState = this.readState()
+
+        window.addEventListener(`beforeunload`, (event) => {
+          if (this.isDirty === true && this.isLeaving === false) {
+            event.preventDefault()
+            // Older Safari only shows the prompt when this is set
+            event.returnValue = ``
+          }
+        })
+
+        document.addEventListener(`click`, (event) => this.onLinkClick(event))
+      },
+
+      readState () {
+        const data = new FormData(this.$root)
+        return new URLSearchParams(data).toString()
+      },
+
+      // A change made and then undone isn't a change
+      checkDirty () {
+        this.isDirty = this.readState() !== this.savedState
+      },
+
+      onLinkClick (event) {
+        if (this.isDirty === false || this.isLeaving === true || event.defaultPrevented === true) {
+          return
+        }
+
+        // These open the link somewhere else, so the page stays
+        const hasModifier = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+
+        if (event.button !== 0 || hasModifier) {
+          return
+        }
+
+        const link = event.target.closest(`a[href]`)
+
+        if (link == null || link.target === `_blank`) {
+          return
+        }
+
+        // A link to another site leaves rook, so it gets the browser's prompt instead
+        const url = new URL(link.href, window.location.href)
+
+        if (url.origin !== window.location.origin) {
+          return
+        }
+
+        event.preventDefault()
+        this.leaveTo = `${url.pathname}${url.search}${url.hash}`
+        this.$refs.leaveDialog.showModal()
+      },
+
+      // Saving redirects to where the link was going (see readDestination in
+      // lib/settingsPages.js). The browser checks the form first, as the Save button does.
+      saveAndLeave () {
+        this.$refs.leaveDialog.close()
+        this.$refs.returnTo.value = this.leaveTo
+        this.$root.requestSubmit()
+      },
+
+      leaveWithoutSaving () {
+        this.isLeaving = true
+        window.location.href = this.leaveTo
+      },
+    }))
+  })
+</script>

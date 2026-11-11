@@ -1,0 +1,80 @@
+{% extends 'layouts/default' %}
+{% from 'partials/adminBits' import pageHeader, card, saveBar %}
+{% from 'partials/settingsBits' import leaveDialog %}
+
+{# The fields scroll above a bar along the bottom, so Save stays in reach #}
+{% block mainClass %}flex flex-col overflow-hidden{% endblock %}
+
+{% block head %}
+  {% include 'partials/settingsFormScript' %}
+{% endblock %}
+
+{% block body %}
+  <div class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-8">
+    {{ pageHeader('Slack', 'Lets the chat model and briefings read the Slack conversations you tick here, and only those, as you. Nothing is ever posted to Slack.') }}
+
+    <form id="settings-form" method="post" action="/settings/slack" class="space-y-6 max-w-3xl"
+      x-data="settingsForm" @input="checkDirty()" @change="checkDirty()" @submit="isLeaving = true">
+      {% call card('Your Slack user token', 'A user token (it starts with xoxp-) from a Slack app installed to your workspace. Rook reads Slack as you with it, so it sees what you see. Leave it empty to keep Rook out of Slack; the conversations you ticked are kept for when you add one again.') %}
+        {# Masked with CSS rather than type="password", which would have browsers offer to save the
+           form as a login every time it's saved #}
+        <input id="slackToken" type="text" name="slackToken" value="{{ slackToken or '' }}" placeholder="xoxp-…" aria-label="Your Slack user token"
+          spellcheck="false" autocapitalize="off" autocomplete="off"
+          class="w-full p-2 font-mono text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600 [-webkit-text-security:disc]">
+      {% endcall %}
+
+      {# Only the conversations ticked here are read. The filter box has no name, so it isn't sent
+         with the form or counted as a change. #}
+      <fieldset class="bg-white rounded-lg shadow-sm" x-data="{ filter: '' }">
+        <div class="px-4 py-3 border-b border-gray-200">
+          <legend class="font-bold">Conversations</legend>
+          <p class="mt-0.5 text-xs text-gray-500">The ones Rook reads: in chats when you ask, and in every briefing.</p>
+        </div>
+
+        {% if not isSlackConfigured %}
+          <p class="px-4 py-3 text-sm text-gray-500">Add your Slack user token above and save to choose what Rook reads.</p>
+        {% elif slackError %}
+          <div class="m-4 p-4 text-sm rounded-lg border border-red-200 bg-red-50 text-red-800" role="alert">
+            Couldn't read Slack: {{ slackError }}
+          </div>
+          {% if slackPicks.length > 0 %}
+            <p class="px-4 pb-3 text-sm text-gray-700">
+              Reading:
+              {% for conversation in slackPicks %}{{ conversation.label }}{% if not loop.last %}, {% endif %}{% endfor %}
+            </p>
+          {% endif %}
+        {% else %}
+          <input type="hidden" name="slackShown" value="true">
+
+          <div class="px-4 pt-3">
+            <input type="search" x-model="filter" placeholder="Filter" aria-label="Filter Slack conversations" @keydown.enter.prevent
+              spellcheck="false" autocapitalize="off" autocomplete="off"
+              class="w-full p-2 text-sm border border-gray-300 rounded-lg focus:ring-0 focus:border-gray-600">
+          </div>
+
+          <div class="max-h-96 overflow-y-auto py-2">
+            {% for group in slackGroups %}
+              {% if group.conversations.length > 0 %}
+                <p class="px-4 pt-2 pb-1 text-xs font-medium text-gray-500">{{ group.title }}</p>
+
+                {% for conversation in group.conversations %}
+                  <label class="flex items-center gap-3 px-4 py-1.5 cursor-pointer hover:bg-gray-50" data-label="{{ conversation.label }}"
+                    x-show="filter === '' || $el.dataset.label.toLowerCase().includes(filter.toLowerCase())">
+                    <input type="checkbox" name="slackChannels" value="{{ conversation.id }}" class="size-4 shrink-0 accent-sky-600"
+                      {% if conversation.picked %}checked{% endif %}>
+                    <span class="min-w-0 text-sm wrap-break-word">{{ conversation.label }}</span>
+                    {% if conversation.kind == 'private' %}<span class="text-xs text-gray-500">private</span>{% endif %}
+                  </label>
+                {% endfor %}
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% endif %}
+      </fieldset>
+
+      {{ leaveDialog() }}
+    </form>
+  </div>
+
+  {{ saveBar('settings-form') }}
+{% endblock body %}

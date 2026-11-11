@@ -15,6 +15,10 @@
           <span><span class="font-medium">Tasks</span><span class="block text-xs text-gray-500">The model can add, find, change and complete tasks.</span></span>
         </label>
         <label class="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="taskRequests" class="mt-0.5 size-4 shrink-0 accent-sky-600" {% if tools.taskRequests %}checked{% endif %}>
+          <span><span class="font-medium">Task requests</span><span class="block text-xs text-gray-500">Users can ask each other to do things, once the person asked allows it in their Settings. Each user's model is told everyone's name, and a request is looked at by the model of whoever it's sent to. Needs tasks.</span></span>
+        </label>
+        <label class="flex items-start gap-2 text-sm">
           <input type="checkbox" name="memories" class="mt-0.5 size-4 shrink-0 accent-sky-600" {% if tools.memories %}checked{% endif %}>
           <span><span class="font-medium">Memories</span><span class="block text-xs text-gray-500">The model saves and searches memories. Needs an embedding model (see Models).</span></span>
         </label>
