@@ -14,8 +14,7 @@
     "dev": "bun --watch run app.js",
     "css": "tailwindcss -i ./assets/application.css -o ./dist/application.css --minify",
     "devcss": "tailwindcss -i ./assets/application.css -o ./dist/application.css --watch",
-    "lint": "eslint --ext .js app.js substruct.js configure.js lib services middleware routes scripts ai-tools",
-    "deploy": "bun scripts/deploy.js"
+    "lint": "eslint --ext .js app.js substruct.js configure.js lib services middleware routes scripts ai-tools"
   },
   "dependencies": {
     "@koa/cors": "5.0.0",

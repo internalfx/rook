@@ -145,8 +145,6 @@ What's decided when ROOK is deployed. All are optional.
 | `ROOK_ENV` | `development` | `production` sends the login cookie over HTTPS only, so it needs a TLS proxy in front |
 | `ROOK_TRUST_PROXY` | `false` | `true` behind a reverse proxy, so the client address comes from `X-Forwarded-For` |
 | `ROOK_DATA_DIR` | `data/` in the checkout | Where the database and images live |
-| `ROOK_WEB_SETUP` | `true` | `false` closes the setup pages of a new install, so no visitor can make the first account; make it with `bun scripts/users.js` instead |
-| `ROOK_BROWSER_SANDBOX` | `true` | `false` runs the web tools' Chrome without its sandbox, for containers where it can't make one |
 
 A bad value stops the server at startup with a message saying what's wrong. A model that the Lemonade server doesn't have is only warned about, since the server may be down.
 
@@ -203,47 +201,6 @@ The model then has `read_slack` and `search_slack`, which only read; it never po
 For production, set `ROOK_ENV=production` and `ROOK_TRUST_PROXY=true` (the unit file has them), and put a TLS proxy such as Caddy or nginx in front, forwarding to the port. The login cookie is marked secure, so plain HTTP won't log anyone in.
 
 Back up by copying `data/`: it holds the database (`rook.db`, in WAL mode, so copy it with `sqlite3 data/rook.db "VACUUM INTO 'backup.db'"` while running) and the images.
-
-## Running in Docker
-
-The `Dockerfile` builds an image with the headless Chrome for the web tools and the libraries it needs. It keeps the database and images in `/data`, listens on port `8005`, and checks its own health at `/healthz`. It sets `ROOK_ENV=production`, `ROOK_TRUST_PROXY=true`, `ROOK_WEB_SETUP=false` and `ROOK_BROWSER_SANDBOX=false`, so it expects a TLS proxy in front, and the first account is made from a terminal in the container, not on the setup pages:
-
-```sh
-docker build -t rook .
-docker run -d --name rook -p 8005:8005 -v rook-data:/data rook
-docker exec -it rook bun scripts/users.js     # Add a user: the first is the admin
-```
-
-Then log in and set the Lemonade server and the models on the Admin pages. Inside the container, `localhost` is the container itself: a Lemonade server on the same machine is at `http://host.docker.internal:8000` once the container is started with `--add-host=host.docker.internal:host-gateway`, or at the machine's own address.
-
-To back up the database while it runs, without sqlite3 in the image:
-
-```sh
-docker exec rook bun -e "new (require('bun:sqlite').Database)('/data/rook.db').run(\"VACUUM INTO '/data/rook-backup.db'\")"
-```
-
-### Coolify
-
-This install runs on Coolify, which builds and runs the `production` branch. Work happens on `main`; to deploy, run
-
-```sh
-bun run deploy
-```
-
-It refuses unless you're on a clean `main` that matches `origin/main`, runs `bun run lint`, then fast-forwards `production` to `main` (`git push origin main:production`). Coolify builds the `Dockerfile` and swaps in the new container once its health check passes. The Coolify application is set up as:
-
-- **Source:** the GitHub App source, repository `internalfx/rook`, branch `production`. Push events reach Coolify through the app, so there's no webhook to manage.
-- **Build pack:** Dockerfile, port `8005`.
-- **Domains:** the address ROOK is reached at, over HTTPS. The login cookie is HTTPS-only.
-- **Persistent storage:** a volume mounted at `/data`, with the database and images. Losing it loses every user and everything of theirs.
-- **Environment:** nothing is required; the Dockerfile sets what the container needs.
-- **Network:** the container has to reach the Lemonade server. If Lemonade runs on the Coolify server itself, add `--add-host=host.docker.internal:host-gateway` under Custom Docker Options and use `http://host.docker.internal:8000` on Admin → Lemonade.
-
-After the first deploy, make the admin's account from the application's **Terminal** tab in Coolify (the setup pages only say to do this), then log in and set up Lemonade and the models:
-
-```sh
-bun scripts/users.js
-```
 
 ## Development
 

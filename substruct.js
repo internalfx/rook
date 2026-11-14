@@ -25,18 +25,6 @@ const httpMethods = [`GET`, `HEAD`, `POST`, `PUT`, `PATCH`, `DELETE`, `OPTIONS`]
 
 koa.proxy = config.koa.proxy
 
-// The container's health check (Dockerfile): answered before anything else runs, so it needs no
-// session and counts against no rate limit
-koa.use(async function (ctx, next) {
-  if (ctx.path === `/healthz` && (ctx.method === `GET` || ctx.method === `HEAD`)) {
-    ctx.set(`Cache-Control`, `no-store`)
-    ctx.body = `ok`
-    return
-  }
-
-  await next()
-})
-
 koa.use(ratelimit({
   driver: `memory`,
   db: ratelimitDB,
