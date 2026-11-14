@@ -34,7 +34,31 @@ if (host.trim() === ``) {
   fail(`ROOK_HOST should be an address to listen on, like 0.0.0.0 or 127.0.0.1.`)
 }
 
-const trustProxy = [`true`, `1`].includes((process.env.ROOK_TRUST_PROXY ?? `false`).toLowerCase())
+// true or false (1 and 0 also do); anything else stops the server
+const readFlag = function (name, fallback) {
+  const value = (process.env[name] ?? fallback).trim().toLowerCase()
+
+  if ([`true`, `1`].includes(value)) {
+    return true
+  }
+
+  if ([`false`, `0`].includes(value)) {
+    return false
+  }
+
+  fail(`${name} should be true or false, not "${process.env[name]}".`)
+}
+
+const trustProxy = readFlag(`ROOK_TRUST_PROXY`, `false`)
+
+// Whether a new install's setup pages are open. Until the first account exists, whoever reaches
+// them makes it, which on a public address could be anyone. Off, they're closed and the first
+// account, the admin's, is made on the server with scripts/users.js. The Docker image turns it off.
+const webSetup = readFlag(`ROOK_WEB_SETUP`, `true`)
+
+// Chrome's sandbox for the web tools. It needs user namespaces, which Docker's default seccomp
+// profile refuses, so the Docker image turns it off and the container is the boundary instead.
+const browserSandbox = readFlag(`ROOK_BROWSER_SANDBOX`, `true`)
 
 const config = {
   env,
@@ -42,6 +66,8 @@ const config = {
   isDevelopment: env !== `production`,
   port,
   host,
+  webSetup,
+  browserSandbox,
   appName: `ROOK`,
   koa: {
     // Behind a reverse proxy, the client's address comes from X-Forwarded-For

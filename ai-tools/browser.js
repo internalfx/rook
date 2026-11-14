@@ -1,5 +1,6 @@
 import puppeteer from 'puppeteer-extra'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
+import config from '../configure.js'
 
 // One headless Chrome, shared by every read_web_page call, so pages are read as a browser
 // renders them (content that a site builds with JavaScript included). It starts on first use
@@ -37,7 +38,14 @@ const getBrowser = async function () {
     }
   }
 
-  browserPromise = puppeteer.launch({ headless: `shell` })
+  // Without its sandbox in a container, where Chrome can't make one (ROOK_BROWSER_SANDBOX)
+  const args = []
+
+  if (config.browserSandbox === false) {
+    args.push(`--no-sandbox`)
+  }
+
+  browserPromise = puppeteer.launch({ headless: `shell`, args })
 
   try {
     const browser = await browserPromise

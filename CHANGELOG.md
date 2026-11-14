@@ -7,6 +7,17 @@ versions follow [Semantic Versioning](https://semver.org).
 
 ### Added
 
+- A Dockerfile, with the web tools' headless Chrome and its libraries, the database and images on
+  a `/data` volume, and a health check at `/healthz`. It's how ROOK runs on Coolify, which
+  deploys the `production` branch; `bun run deploy` lints a clean `main` that matches origin and
+  fast-forwards `production` to it.
+- `ROOK_WEB_SETUP=false` closes a new install's setup pages, so whoever finds the address first
+  can't make the admin's account; it's made with `bun scripts/users.js` instead. The Docker image
+  sets it.
+- `ROOK_BROWSER_SANDBOX=false` runs the web tools' Chrome without its sandbox, which it can't make
+  under Docker's default seccomp profile. The Docker image sets it.
+- CI builds the Docker image, starts it, and has its Chrome read a page
+- The server stops cleanly on SIGTERM
 - Task requests between users. "Ask Dana to order paper by Friday" in a chat sends the request
   to Dana's ROOK, whose model accepts it onto her list, declines it, or leaves it for her to
   answer, going by the note she wrote about the sender, her memories and her tasks. Settings →
@@ -37,6 +48,8 @@ versions follow [Semantic Versioning](https://semver.org).
 
 ### Changed
 
+- `ROOK_TRUST_PROXY` takes `true`, `false`, `1` or `0`, and anything else stops the server,
+  where before anything but `true` and `1` quietly meant `false`
 - Settings is a group in the sidebar, like Admin, with a page for each thing: Time zone, Slack,
   Notifications, People and Password. Each page saves only what's on it.
 - Passwords need at least 10 characters everywhere: the setup wizard, Change password, Admin →

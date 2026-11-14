@@ -41,3 +41,34 @@ jobs:
           cat server.log
           kill "$server" || true
           exit 1
+
+  # Builds the Docker image Coolify runs, starts it, and has its headless Chrome read a page
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: docker build -t rook .
+
+      - name: Start the image and check it answers, with setup closed
+        run: |
+          docker run -d --name rook -p 8005:8005 rook
+          for i in $(seq 1 60); do
+            if curl -fsS -o /dev/null http://127.0.0.1:8005/healthz; then
+              break
+            fi
+            sleep 0.5
+          done
+          docker logs rook
+          curl -fsS http://127.0.0.1:8005/healthz
+          # A fresh install's setup is closed in the image: the page says to use scripts/users.js
+          curl -fsS http://127.0.0.1:8005/setup | grep -q "scripts/users.js"
+
+      - name: Read a web page with the image's headless Chrome
+        run: |
+          docker exec rook bun -e "
+            const browser = (await import('/app/ai-tools/browser.js')).default
+            const page = await browser.loadPage({ url: 'https://example.com', signal: new AbortController().signal })
+            console.log(page.status, page.url)
+            process.exit(page.status === 200 ? 0 : 1)
+          "
