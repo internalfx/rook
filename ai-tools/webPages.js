@@ -3,6 +3,7 @@ import lemonade from '../lib/lemonade.js'
 import webReader from './webReader.js'
 import { extrasFor } from './sites.js'
 import { readToolUrl } from './arguments.js'
+import { wrapUntrusted } from './untrusted.js'
 import prompts from '../lib/prompts.js'
 
 // read_web_page: reads a page on one of the sites listed in Admin → Tools, as Markdown (see
@@ -112,7 +113,7 @@ const runReadWebPage = async function ({ argumentsText, toolSettings, signal }) 
   const readerLine = describeReader(page.reader)
   const heading = readerLine == null ? `Page: ${page.url}` : `Page: ${page.url}\n${readerLine}`
 
-  return { content: `${heading}\n\n${body}`, imageId: null }
+  return { content: `${heading}\n\n${wrapUntrusted(`web page`, body)}`, imageId: null }
 }
 
 export const tools = [

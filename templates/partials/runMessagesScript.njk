@@ -45,10 +45,59 @@
   window.runMessages = {
     // A reply's Markdown => HTML that's safe to put in the page. Replies can repeat what the
     // model read on web pages, so anything like a script or a javascript: link is removed.
-    // Single line breaks are kept, as the model means them.
+    // An image from another site would be fetched as soon as the reply shows, and its URL could
+    // carry what's in the chat to whoever runs that site, so it becomes a link to click instead
+    // (the Content-Security-Policy blocks such images too, see substruct.js). Rook's own images
+    // still show. Single line breaks are kept, as the model means them.
     renderMarkdown (text) {
       const html = marked.parse(text, { gfm: true, breaks: true })
-      return DOMPurify.sanitize(html)
+      const fragment = DOMPurify.sanitize(html, { RETURN_DOM_FRAGMENT: true })
+
+      // Whether `url` (as written in the HTML) is on rook itself
+      const isRook = function (url) {
+        try {
+          return new URL(url, window.location.href).origin === window.location.origin
+        } catch (err) {
+          return false
+        }
+      }
+
+      for (const image of fragment.querySelectorAll(`img`)) {
+        const src = image.getAttribute(`src`) ?? ``
+        const isOwn = /^(data:|blob:)/i.test(src) || (src !== `` && isRook(src))
+
+        if (isOwn) {
+          continue
+        }
+
+        const link = document.createElement(`a`)
+        let label = src
+
+        try {
+          const url = new URL(src, window.location.href)
+          label = `${url.host}${url.pathname}`
+        } catch (err) {}
+
+        if (label.length > 60) {
+          label = `${label.slice(0, 59)}…`
+        }
+
+        link.textContent = image.getAttribute(`alt`) ? `Image: ${image.getAttribute(`alt`)} (${label})` : `Image: ${label}`
+
+        // Made after sanitizing, so it's given what the hook above gives every link
+        if (/^https?:\/\//i.test(src)) {
+          link.setAttribute(`href`, src)
+          link.setAttribute(`target`, `_blank`)
+          link.setAttribute(`rel`, `noopener noreferrer`)
+        }
+
+        image.replaceWith(link)
+      }
+
+      const holder = document.createElement(`div`)
+      holder.append(fragment)
+
+      return holder.innerHTML
     },
 
     hasToolRow (message) {

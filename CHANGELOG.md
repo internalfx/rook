@@ -58,6 +58,11 @@ versions follow [Semantic Versioning](https://semver.org).
 
 ### Fixed
 
+- Reading web pages is locked down. The headless browser can only reach public addresses over
+  HTTPS, through a proxy that checks every connection. Every navigation must stay on the listed
+  sites, redirects included, and only `http(s)` URLs open. Page text is marked as untrusted for
+  the model. Images from other sites in replies are shown as links instead of loading, and a
+  Content-Security-Policy backs that up. See SECURITY.md.
 - The test server kept its images in the real `data/images` instead of its own copy
 
 ## [0.1.0] - 2026-11-08

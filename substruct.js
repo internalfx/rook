@@ -47,9 +47,22 @@ koa.use(ratelimit({
 }))
 koa.use(cors(config.koa.cors))
 
-// Pages may only be framed by rook's own pages, never by other sites
+// Pages may only be framed by rook's own pages, never by other sites. Replies can repeat what
+// the model read on the web, so pages may also only load images from rook (an image from
+// elsewhere could carry a chat's contents off in its URL), send requests to rook, and submit
+// forms to rook. Scripts aren't limited here: Alpine and rook's inline scripts need eval and
+// inline code.
+const contentSecurityPolicy = [
+  `frame-ancestors 'self'`,
+  `img-src 'self' data: blob:`,
+  `connect-src 'self'`,
+  `form-action 'self'`,
+  `object-src 'none'`,
+  `base-uri 'self'`,
+].join(`; `)
+
 koa.use(async function (ctx, next) {
-  ctx.set(`Content-Security-Policy`, `frame-ancestors 'self'`)
+  ctx.set(`Content-Security-Policy`, contentSecurityPolicy)
   await next()
 })
 

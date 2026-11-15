@@ -7,8 +7,11 @@
 //                   page banner and footer are removed on every site)
 //   skipLinkPaths   links found on every page that lead nowhere useful (sign-in and the like)
 //   rewriteURL      a page's URL => a better URL to read instead (or the same one)
+//   alsoAllow       other hosts a page there may lead to (by a redirect) and still be read
 export const siteExtras = {
   'github.com': {
+    // A file's raw URL redirects there
+    alsoAllow: [`raw.githubusercontent.com`],
     contents: `repositories, folders, files, issues, pull requests, commits, releases, users and organizations, and search results (https://github.com/search?q=QUERY&type=repositories, or type=issues, pullrequests, users)`,
     removeSelectors: [
       `header[aria-label="Global navigation menu"]`,
@@ -68,6 +71,20 @@ export const extrasFor = function (domain) {
   return siteExtras[domain] ?? {}
 }
 
+// Whether a tab reading a page may be at `hostname`: on a listed domain, or a host one of them
+// allows too (alsoAllow). Checked on every navigation, redirects included (see browser.js).
+export const isReadableHost = function (hostname, domains) {
+  if (matchDomain(hostname, domains) != null) {
+    return true
+  }
+
+  const host = hostname.toLowerCase()
+
+  return domains.some(function (domain) {
+    return (extrasFor(domain).alsoAllow ?? []).includes(host)
+  })
+}
+
 // Sites, one per line (or one per list entry) => { domains, invalid }. Lines may be full URLs or
 // start with "www."; either way only the domain is kept. `invalid` lists lines that aren't sites.
 export const parseDomains = function (text) {
@@ -112,6 +129,7 @@ export default {
   siteExtras,
   matchDomain,
   extrasFor,
+  isReadableHost,
   parseDomains,
   describeDomains,
 }

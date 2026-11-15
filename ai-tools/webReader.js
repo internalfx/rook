@@ -4,7 +4,7 @@ import TurndownService from 'turndown'
 import { gfm } from 'turndown-plugin-gfm'
 import browser from './browser.js'
 import mainContent from './mainContent.js'
-import { matchDomain, extrasFor, describeDomains } from './sites.js'
+import { matchDomain, extrasFor, isReadableHost, describeDomains } from './sites.js'
 
 // Loads web pages for the read_web_page tool (in a headless browser, see browser.js) and turns
 // them into Markdown. Pages are mostly scripts, styles and embedded data (GitHub's run from a
@@ -287,6 +287,16 @@ export const readPage = async function ({ url, domains, readerModel = null, sign
     throw new Error(`"${url}" isn't a URL.`)
   }
 
+  // Only web pages: no file:, data:, javascript: or the browser's own pages
+  if (pageURL.protocol !== `https:` && pageURL.protocol !== `http:`) {
+    throw new Error(`Only http(s) web pages can be read, not ${pageURL.protocol} URLs.`)
+  }
+
+  // The browser only connects over HTTPS (see egressProxy.js); nearly every site has it
+  if (pageURL.protocol === `http:`) {
+    pageURL.protocol = `https:`
+  }
+
   const domain = matchDomain(pageURL.hostname, domains)
 
   if (domain == null) {
@@ -299,7 +309,11 @@ export const readPage = async function ({ url, domains, readerModel = null, sign
     pageURL = rewriteURL(pageURL)
   }
 
-  const page = await browser.loadPage({ url: pageURL.href, signal })
+  const isAllowedHost = function (hostname) {
+    return isReadableHost(hostname, domains)
+  }
+
+  const page = await browser.loadPage({ url: pageURL.href, isAllowedHost, signal })
 
   if (page.status >= 400) {
     throw new Error(describeFailure(page))

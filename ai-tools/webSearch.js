@@ -4,6 +4,7 @@ import { matchDomain } from './sites.js'
 import { getReadableDomains } from './webPages.js'
 import { readSearchQuery } from './arguments.js'
 import prompts from '../lib/prompts.js'
+import { wrapUntrusted } from './untrusted.js'
 
 // web_search: searches DuckDuckGo (see duckduckgo.js), and marks the results read_web_page can
 // open
@@ -69,7 +70,7 @@ const runWebSearch = async function ({ argumentsText, signal }) {
     return `${index + 1}. [${result.title}](${result.url})${readable}${snippet}`
   })
 
-  return { content: `Results for "${query.trim()}":\n\n${lines.join(`\n`)}`, imageId: null }
+  return { content: `Results for "${query.trim()}":\n\n${wrapUntrusted(`search results`, lines.join(`\n`))}`, imageId: null }
 }
 
 export const tools = [

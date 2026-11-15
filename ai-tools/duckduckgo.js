@@ -111,11 +111,16 @@ const parseResults = async function (html) {
   return { results: cleanResults, hasNoResultsMessage }
 }
 
+// The search page may only lead to DuckDuckGo's own pages
+const isDuckDuckGo = function (hostname) {
+  return hostname === `duckduckgo.com` || hostname.endsWith(`.duckduckgo.com`)
+}
+
 // Returns up to maxResults results as { title, url, snippet }, or none when nothing matched.
 // Throws with a message for the model when DuckDuckGo won't answer.
 export const search = async function ({ query, signal }) {
   const url = `${searchURL}?q=${encodeURIComponent(query)}`
-  const page = await browser.loadPage({ url, signal })
+  const page = await browser.loadPage({ url, isAllowedHost: isDuckDuckGo, signal })
 
   if (page.status >= 400 || page.html == null) {
     const status = `${page.status} ${page.statusText}`.trim()
