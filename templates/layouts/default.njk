@@ -112,10 +112,10 @@
           },
 
           // Each notification sent while this page is open arrives here at once (see
-          // lib/notificationEvents.js). The nav dot is updated, and when rook isn't what's being
-          // looked at (minimized, in the background, another window focused), it pops up on the
-          // desktop, if this browser was allowed to (Settings → Notifications → This computer).
-          // Nothing pops up while rook isn't open; the phone is for that. EventSource reconnects
+          // lib/notificationEvents.js). The nav dot is updated, and it pops up on the desktop, if
+          // this browser was allowed to (Settings → Notifications → This computer), even with rook
+          // in front, since the nav dot is easy to miss. Nothing pops up while rook isn't open;
+          // the phone is for that. EventSource reconnects
           // on its own after a dropped connection or a server restart.
           watchNotifications () {
             if (typeof EventSource === `undefined`) {
@@ -134,12 +134,7 @@
               }
 
               this.refresh()
-
-              const isLookedAt = document.hidden === false && document.hasFocus()
-
-              if (isLookedAt === false) {
-                this.popUp(notification)
-              }
+              this.popUp(notification)
             })
 
             // Closed when leaving the page, so the next page's stream isn't held up behind it

@@ -70,7 +70,7 @@
         test () {
           try {
             new Notification(`Rook test notification`, {
-              body: `While rook is open but not in front, notifications pop up like this.`,
+              body: `While rook is open, notifications pop up like this.`,
               icon: `/static/icon-192.png?v=2`,
               tag: `rook-test`,
             })
@@ -121,7 +121,7 @@
       {% endcall %}
 
       {# Not a saved setting: it's this browser's permission, so nothing here makes the form dirty #}
-      {% call card('This computer', 'While rook is open but not in front, minimized or behind another window, notifications pop up on the desktop. When rook is closed, they go to your phone only.') %}
+      {% call card('This computer', 'While rook is open, in front or not, notifications pop up on the desktop. When rook is closed, they go to your phone only.') %}
         <div class="space-y-3" x-data="desktopNotify">
           <p x-cloak x-show="state === 'unsupported'" class="text-sm text-gray-700">This browser can't show notifications.</p>
           <p x-cloak x-show="state === 'insecure'" class="text-sm text-gray-700">Browsers only show notifications from a site opened over HTTPS (or on localhost). Open rook at its https:// address to turn them on.</p>
