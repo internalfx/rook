@@ -68,7 +68,8 @@
       document.addEventListener(`alpine:init`, () => {
         // `indicators` is what the server rendered the nav dots and the tasks badge with:
         // { briefingIsNew, notificationsUnseen, tasksBadge, requestsWaiting }
-        Alpine.data(`layout`, (indicators, navOpen) => ({
+        // `isLoggedIn` opens the stream of notifications as they're sent, for desktop pop-ups
+        Alpine.data(`layout`, (indicators, navOpen, isLoggedIn) => ({
           ...indicators,
 
           // Small screens only: the sidebar slides over the page and starts closed
@@ -97,8 +98,80 @@
             window.addEventListener(`pageshow`, (event) => {
               if (event.persisted) {
                 this.refresh()
+
+                // Its stream was closed on leaving (see watchNotifications)
+                if (isLoggedIn) {
+                  this.watchNotifications()
+                }
               }
             })
+
+            if (isLoggedIn) {
+              this.watchNotifications()
+            }
+          },
+
+          // Each notification sent while this page is open arrives here at once (see
+          // lib/notificationEvents.js). The nav dot is updated, and when rook isn't what's being
+          // looked at (minimized, in the background, another window focused), it pops up on the
+          // desktop, if this browser was allowed to (Settings → Notifications → This computer).
+          // Nothing pops up while rook isn't open; the phone is for that. EventSource reconnects
+          // on its own after a dropped connection or a server restart.
+          watchNotifications () {
+            if (typeof EventSource === `undefined`) {
+              return
+            }
+
+            const events = new EventSource(`/notifications/events`)
+
+            events.addEventListener(`notification`, (event) => {
+              let notification
+
+              try {
+                notification = JSON.parse(event.data)
+              } catch (err) {
+                return
+              }
+
+              this.refresh()
+
+              const isLookedAt = document.hidden === false && document.hasFocus()
+
+              if (isLookedAt === false) {
+                this.popUp(notification)
+              }
+            })
+
+            // Closed when leaving the page, so the next page's stream isn't held up behind it
+            window.addEventListener(`pagehide`, () => events.close(), { once: true })
+          },
+
+          // Shows the notification on the desktop. Every open rook tab gets the same one; the tag
+          // (its id) has the browser show it once.
+          popUp (notification) {
+            if (typeof Notification === `undefined` || Notification.permission !== `granted`) {
+              return
+            }
+
+            try {
+              const popUp = new Notification(notification.title, {
+                body: notification.message,
+                icon: `/static/icon-192.png?v=2`,
+                tag: notification.id,
+                requireInteraction: notification.priority === `high`,
+              })
+
+              popUp.onclick = () => {
+                window.focus()
+                popUp.close()
+
+                if (window.location.pathname === `/notifications`) {
+                  window.location.reload()
+                } else {
+                  window.location.href = `/notifications`
+                }
+              }
+            } catch (err) {}
           },
 
           async refresh () {
@@ -166,7 +239,7 @@
   </head>
 
   <body class="h-dvh flex flex-col bg-gray-100 text-gray-900"
-    x-data="layout({ briefingIsNew: {{ briefingIsNew }}, notificationsUnseen: {{ notificationsUnseen }}, tasksBadge: {{ tasksBadge }}, requestsWaiting: {{ requestsWaiting }} }, { settings: {{ 'true' if onSettingsPage else 'false' }}, admin: {{ 'true' if onAdminPage else 'false' }} })">
+    x-data="layout({ briefingIsNew: {{ briefingIsNew }}, notificationsUnseen: {{ notificationsUnseen }}, tasksBadge: {{ tasksBadge }}, requestsWaiting: {{ requestsWaiting }} }, { settings: {{ 'true' if onSettingsPage else 'false' }}, admin: {{ 'true' if onAdminPage else 'false' }} }, {{ 'true' if ctx.state.user else 'false' }})">
     <header class="h-14 shrink-0 flex items-center gap-3 px-4 bg-white border-b border-gray-200">
       <button type="button" class="-ml-1 p-1.5 rounded-md text-gray-600 hover:bg-gray-100" aria-label="Toggle navigation" @click="toggleSidebar()">
         <span class="icon-menu block size-5 bg-current" aria-hidden="true"></span>
