@@ -34,6 +34,8 @@
       sending: false,
       error: null,
       abort: null,
+      // The reply's stream was cut off and the page will reload (see recover)
+      isRecovering: false,
       // Small screens only: the list of chats opens over the conversation
       listOpen: false,
       // The chat whose delete button is waiting for confirmation
@@ -47,6 +49,17 @@
         this.chats = data.chats
         this.messages = data.messages
         this.seesImages = data.seesImages === true
+
+        // What was typed before recover() reloaded the page
+        try {
+          const draftKey = `rook.chatDraft.${this.chatId}`
+          const draft = sessionStorage.getItem(draftKey)
+
+          if (draft != null) {
+            this.input = draft
+            sessionStorage.removeItem(draftKey)
+          }
+        } catch (err) {}
 
         this.scrollToBottom()
         this.$refs.input.focus()
@@ -116,15 +129,72 @@
         this.sending = true
 
         try {
-          const response = await fetch(`/chat/${this.chatId}/stream`, { signal: controller.signal })
+          let response = null
+
+          try {
+            response = await fetch(`/chat/${this.chatId}/stream`, { signal: controller.signal })
+          } catch (err) {
+            err.isCutOff = err.name !== `AbortError`
+            throw err
+          }
+
           await this.readStream(response, this.chatId)
         } catch (err) {
+          if (err.isCutOff === true) {
+            this.recover()
+            return
+          }
+
           if (err.name !== `AbortError`) {
             this.error = err.message
           }
         } finally {
-          this.finishSending(controller)
+          if (this.isRecovering === false) {
+            this.finishSending(controller)
+          }
         }
+      },
+
+      // The reply's stream was cut off, but the reply goes on on the server. That happens when
+      // a phone puts the app away (iOS cuts a suspended PWA's connections, and the read fails
+      // with "Load failed") or the connection drops. Once the page is on screen again, it
+      // reloads, which shows what was saved and watches the reply again if it's still running.
+      // The wait first is for a page that's being left: Safari cuts its requests as soon as it
+      // starts leaving, and reloading then would take the place of the link just tapped. What's
+      // typed in the box is kept for the reload.
+      recover () {
+        if (this.isRecovering) {
+          return
+        }
+
+        this.isRecovering = true
+        this.error = null
+
+        const reload = () => {
+          setTimeout(() => {
+            try {
+              if (this.input !== ``) {
+                sessionStorage.setItem(`rook.chatDraft.${this.chatId}`, this.input)
+              }
+            } catch (err) {}
+
+            window.location.reload()
+          }, 1500)
+        }
+
+        if (document.visibilityState === `visible`) {
+          reload()
+          return
+        }
+
+        const onVisible = () => {
+          if (document.visibilityState === `visible`) {
+            document.removeEventListener(`visibilitychange`, onVisible)
+            reload()
+          }
+        }
+
+        document.addEventListener(`visibilitychange`, onVisible)
       },
 
       finishSending (controller) {
@@ -339,11 +409,19 @@
 
           await this.readStream(response, chatId)
         } catch (err) {
+          // The message was saved and the reply started, so the reload shows both
+          if (err.isCutOff === true && this.chatId != null) {
+            this.recover()
+            return
+          }
+
           if (err.name !== `AbortError`) {
             this.error = err.message
           }
         } finally {
-          this.finishSending(controller)
+          if (this.isRecovering === false) {
+            this.finishSending(controller)
+          }
         }
       },
 
@@ -355,7 +433,17 @@
         let buffer = ``
 
         while (true) {
-          const { value, done } = await reader.read()
+          let chunk = null
+
+          // Failing here means the connection was lost, not that something was wrong with it
+          try {
+            chunk = await reader.read()
+          } catch (err) {
+            err.isCutOff = err.name !== `AbortError`
+            throw err
+          }
+
+          const { value, done } = chunk
 
           if (done) {
             break
